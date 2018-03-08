@@ -1,5 +1,5 @@
-from zipline import run_algorithm
 import multi_factor
-import keras
+from models import DDQN_agent
+from envs import dynamic_beta_env
 
-WEIGHTS = [0.5, 0.5]
+INIT_WEIGHTS = [0.5, 0.5]
