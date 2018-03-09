@@ -61,6 +61,8 @@ import pandas as pd
 import numpy as np  
 from pathos.multiprocessing import ProcessPool as Pool
 
+import sqlite3
+
 NPROC = 8
 
 fundamentals = {}
@@ -105,6 +107,5 @@ except Exception as e:
 
 for metric, data in zip(func_args, outputs):
     fundamentals[metric] = data
-universe = set(list(full_df)[1:])
-for metric in func_args:
-    universe = universe.intersection(set(fundamentals[metric].keys()))
+
+#TODO: Export data into db for faster access

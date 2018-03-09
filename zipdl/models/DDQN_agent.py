@@ -1,5 +1,4 @@
 #code adapted from https://github.com/keon/deep-q-learning/blob/master/ddqn.py
-
 from collections import deque
 from keras.models import Sequential
 from keras.layers import Dense
@@ -16,8 +15,6 @@ MIN_EPSILON = 0.01 #Min explore rate
 EPSILON_DECAY = 0.99 #Rate of exploration decay
 LEARNING_RATE = 0.001 
 LAYER_DIMENSION = 24
-
-EPISODES = 5000
 
 SHARPE_GOAL = 2
 
@@ -37,14 +34,19 @@ class DDQNAgent:
         self.algo = algo
 
     def _finance_loss(self, model, goal_sharpe = SHARPE_GOAL):
-        pass
-    
+        '''
+        Huber loss with target being sharpe
+        '''
+        #TODO: Calculate Sharpes
+        return self._huber_loss(goal_sharpe, model)
+            
     def _huber_loss(self, target, prediction):
         error = prediction-target
         return K.mean(K.sqrt(1 + K.square(error))-1, axis=-1)
     
     def _build_model(self):
-        model = Sequential()24
+        #TODO - Calculate largest action space for dbnodes, then dropout neurons that will not be used for other nodes
+        model = Sequential()
         model.add(Dense(LAYER_DIMENSION, input=self.state_size, activation='relu'))
         model.add(Dense(LAYER_DIMENSION, activation='relu'))
         model.add(Dense(self.action_size, activation='linear'))

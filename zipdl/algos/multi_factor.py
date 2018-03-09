@@ -2,7 +2,7 @@ import numpy as numpy
 import pyfolio
 from zipline.finance import commission, slippage
 from zipline.pipeline import CustomFactor
-from zipline.api import set_commission
+from zipline.api import set_commission, get_open_orders, order_target_percent, record
 from zipline.pipeline.data import USEquityPricing
 import talib
 
@@ -22,22 +22,46 @@ BBLOWER = 1.5
 RSI_LOWER = 30
 RSI_UPPER = 70
 
-def initialize_environment(weight):
+#==================PRIMARY==========================
+
+def initialize_environment(weight, window_length):
     def initialize(context):
         set_comission(commission.Pershare(cost=0.005, min_trade_cost=1.00))
         context.Factor_weights = get_factor_weights()
+        context.window_length = window_length
     return initialize
 
 def handle_data(context, data):
-    order(symbol('AAPL'), 10)
+    rebalance_portfolio(context, data)
+    
+def rebalance_portfolio(context, data):
+    # rebalance portfolio
+    close_old_position(context, data)
+    total_weight = np.sum(context.weights.abs())
+    weights = context.weights / total_weight
+    for stock, weight in weights.items():
+        order_target_percent(stock, weight)
+
+#==================UTILS==========================
+
+def cancel_open_orders(context, data):
+    for stock in get_open_orders():
+        for order in get_open_orders(stock):
+            cancel_order(order)
+
+def close_old_positions(context, data):
+    to_be_closed = pd.Series()
+    for stock in context.portfolio.positions:
+        if stock not in context.weights:
+            to_be_closed.set_value(stock, 0.0)
+            
+    context.weights = to_be_closed.append(context.weights)
 
 class ValueFactor(CustomFactor):
     """
     For every stock, computes a value score for it, defined as the product of 
     its book-price, FCF-price, and EBITDA-EV ratio, where a higher value is 
     desirable.
-
-
     """
     inputs = [fundamentals['EBITDA'],
               fundamentals['Gross Margin'],
