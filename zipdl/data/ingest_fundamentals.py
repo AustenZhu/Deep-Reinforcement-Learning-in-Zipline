@@ -60,8 +60,8 @@ Cash From Financing Activities
 import pandas as pd
 import numpy as np  
 from pathos.multiprocessing import ProcessPool as Pool
-
-import sqlite3
+from zipline.data import db
+from zipline.data import models
 
 NPROC = 8
 
@@ -109,3 +109,14 @@ for metric, data in zip(func_args, outputs):
     fundamentals[metric] = data
 
 #TODO: Export data into db for faster access
+models.Base.metadata.create_all(db.engine)
+session = db.create_session()
+universe = pd.Series.from_csv('universe.csv')
+for fundamental in func_args:
+    current = fundamentals[fundamental]
+    for ticker in universe:
+        data = current[ticker].to_dict()
+        fnd = models.Fundamentals(ticker=ticker, metric=fundamental, time_series=data)
+        session.add(fnd)
+    session.commit()
+    
