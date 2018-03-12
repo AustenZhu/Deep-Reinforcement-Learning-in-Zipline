@@ -60,8 +60,8 @@ Cash From Financing Activities
 import pandas as pd
 import numpy as np  
 from pathos.multiprocessing import ProcessPool as Pool
-from zipline.data import db
-from zipline.data import models
+import db
+import models
 
 NPROC = 8
 
@@ -74,6 +74,7 @@ def process_fundamental(metric):
     join_universe - what list to join to
     '''
     df = reduce_df(full_df, metric)
+    df = df.set_index(list(df)[0])
     print('Starting ingestion of {}'.format(metric))
     
     store = {}
@@ -85,16 +86,17 @@ def process_fundamental(metric):
     return store
 
 def reduce_df(df, metric):
-    temp = df[df.columns.drop([label for label in df.columns if label[1] != metric])]
+    temp = df[df.columns.drop([label for label in df.columns if label[1] != metric and label[1] != date_col[1]])]
     #print(temp.columns) 
     temp.columns = temp.columns.droplevel(level=1)
     return temp
 
 print('Beginning... ')
-full_df = pd.read_csv('../../fundamentals.csv', low_memory=False, header=[0,1])
+full_df = pd.read_csv('../../../fundamentals.csv', low_memory=False, header=[0,1])
 print('csv in memory')
 
 metrics = set([x[1] for x in list(full_df)[1:]])
+date_col = list(full_df)[0]
 
 pool = Pool(nodes=NPROC)
 func_args = list(metrics)
@@ -109,13 +111,16 @@ for metric, data in zip(func_args, outputs):
     fundamentals[metric] = data
 
 #TODO: Export data into db for faster access
-models.Base.metadata.create_all(db.engine)
+#models.Base.metadata.create_all(db.engine)
 session = db.create_session()
-universe = pd.Series.from_csv('universe.csv')
+with open('universe.csv') as f:
+    data = f.read().replace("'", '').replace(' ','').replace('\n', '').split(',')
+universe = data
 for fundamental in func_args:
     current = fundamentals[fundamental]
     for ticker in universe:
-        data = current[ticker].to_dict()
+        real = ticker.replace("'", '').replace(' ','').replace('\n', '')
+        data = current[real].to_dict()
         fnd = models.Fundamentals(ticker=ticker, metric=fundamental, time_series=data)
         session.add(fnd)
     session.commit()
