@@ -1,5 +1,7 @@
 import numpy as numpy
 import pyfolio
+import zipline
+
 from zipline.finance import commission, slippage
 from zipline.pipeline import CustomFactor
 from zipline.api import set_commission, get_open_orders, order_target_percent, record
@@ -31,6 +33,9 @@ def initialize_environment(weight, window_length):
         context.window_length = window_length
     return initialize
 
+#schedule trading monthly
+#schedule stop loss/take gain daily
+
 def handle_data(context, data):
     rebalance_portfolio(context, data)
     
@@ -57,6 +62,10 @@ def close_old_positions(context, data):
             
     context.weights = to_be_closed.append(context.weights)
 
+def rank(context, data):
+    pass
+
+#===================FACTORS=========================
 class ValueFactor(CustomFactor):
     """
     For every stock, computes a value score for it, defined as the product of 

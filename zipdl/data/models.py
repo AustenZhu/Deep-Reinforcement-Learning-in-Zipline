@@ -3,8 +3,10 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import types, VARCHAR
 from sqlalchemy.ext import mutable
 
-import db
+from zipdl.data import db
 import json
+
+import datetime as dt
 
 Base = declarative_base()
 

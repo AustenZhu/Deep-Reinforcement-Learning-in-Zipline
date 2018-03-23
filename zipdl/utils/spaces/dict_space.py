@@ -3,7 +3,7 @@ Taken from: https://github.com/openai/gym/blob/master/gym/spaces/dict_space.py
 '''
 from collections import OrderedDict
 
-class Dict(gym.Space):
+class Dict():
     """
     A dictionary of simpler spaces.
     Example usage:

@@ -11,12 +11,12 @@ from zipline import run_algorithm
 MAX_REPLAY_MEM = 2000 #Number of replays to store
 GAMMA = 0.95 #Discount Rate
 EPSILON = 1 #Start explore rate
-MIN_EPSILON = 0.01 #Min explore rate
+EPMIN_EPSILON = 0.01 #Min explore rate
 EPSILON_DECAY = 0.99 #Rate of exploration decay
 LEARNING_RATE = 0.001 
 LAYER_DIMENSION = 24
 
-SHARPE_GOAL = 2
+SORTINO_GOAL = 1.2
 
 class DDQNAgent:
     def __init__(self, state_size, action_size, algo):
@@ -33,12 +33,14 @@ class DDQNAgent:
         self.update_target_model()
         self.algo = algo
 
-    def _finance_loss(self, model, goal_sharpe = SHARPE_GOAL):
+    def _finance_loss(self, model_metric, goal=SORTINO_GOAL):
         '''
-        Huber loss with target being sharpe
+        Huber loss with target as the metric 
+        (We look for a constant adjusted rate of risk-reward,
+            and reward any performance higher than that)
         '''
-        #TODO: Calculate Sharpes
-        return self._huber_loss(goal_sharpe, model)
+        #TODO: Calculate metric
+        return self._huber_loss(goal, model)
             
     def _huber_loss(self, target, prediction):
         error = prediction-target

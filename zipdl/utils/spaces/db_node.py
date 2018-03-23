@@ -1,16 +1,13 @@
-class DBNode:
-    def __init__(self, weights, nodes=None):
+from spaces import Discrete
+class DBNode():
+    Nodes = []
+    def __init__(self, weights, index):
         '''
         nodes - list of other dbnodes that new node is connected to
         weights - assigned factor weights for new node
         '''
         self.weights = weights
-        if not nodes:
-            self.action_space = [self]
-        else:
-            self.action_space = nodes #possible nodes to move to
-    def add(self, *node):
-        '''
-        Add a possible action (ie a state to move to)
-        '''
-        self.action_space.extend(*node)
+        self.index = index
+        self.action_space = Discrete(3)
+        #0 is left, 1 is stationary, 2 is right
+        Nodes.append(self)

@@ -7,19 +7,19 @@ import matplotlib.pyplot as plt
 
 from zipdl.utils import seeding
 from zipdl.utils import utils
-from zipdl.utils.spaces import Dict, Discrete, DBNode
+from zipdl.utils.spaces import Discrete, DBNode
 
 from zipline import run_algorithm
 from zipdl.algos import multi_factor
 
 START_CASH = 5000
 #TODO: Allow partitioning of the time span of data to allow for cross-validation testing
-TRADING_START = dt.strptime('2002-01-01', '%Y-%m-%d')
+TRADING_START = dt.strptime('2004-01-01', '%Y-%m-%d')
 TRADING_END = dt.strptime('2016-01-01', '%Y-%m-%d')
-ENV_METRICS = ['Gross Margin', 'Revenue', 'VIX']
+ENV_METRICS = ['t3m', 'personal savings', 'vix']
 NUM_BUCKETS = [3, 3, 3]
 #Where the first element is the starting factor weighting
-FACTOR_WEIGHTS = [[0.5, 0.5], [0.1, 0.9], [0.3, 0.7], [0.7, 0.3], [0.9, 0.1]]
+FACTOR_WEIGHTS = [[0.1, 0.9], [0.3, 0.7], [0.5, 0.5], [0.7, 0.3], [0.9, 0.1]]
 
 #Save plots of reward
 SAVE_FIGS=False
@@ -27,6 +27,18 @@ RENDER = False
 
 if RENDER:
     plt.ion()
+
+'''
+MODEL OF NODES:
+      
+  [1,9]<->[3,7]<->[5,5]<->[7,3]<->[9,1]
+    ---------------^ ^---------------
+    *Each node is also able to remain stationary
+    Ie. there are three moves for every node - left, stationary, and right.
+
+Nodes action spaces parameterized as follows: [*, *, *, *, *]
+Where entry corresponds to model above, and a 1 in the entry corresponds to a valid move. 
+'''
 
 class Dynamic_beta_env:
     def __init__(self, window='month', algo):
@@ -42,7 +54,7 @@ class Dynamic_beta_env:
         '''
         self.starting_cash = START_CASH
         self.window = window
-        if window = 'month':
+        if window == 'month':
             self.timedelta = 31
         self.date = TRADING_START
 
@@ -59,17 +71,11 @@ class Dynamic_beta_env:
             
     def initialize_nodes():
         #Initialize nodes according to mdp, and return starting nodes
-        starting = DBNode(FACTOR_WEIGHTS[0])
-        one_nine = DBNode(FACTOR_WEIGHTS[1])
-        three_seven = DBNode(FACTOR_WEIGHTS[2])
-        seven_three = DBNode(FACTOR_WEIGHTS[3])
-        nine_one = DBNode(FACTOR_WEIGHTS[4])
-        starting.add(one_nine, three_seven, seven_three, nine_one)
-        one_nine.add(three_seven, starting)
-        three_seven.add(one_nine, starting)
-        seven_three.add(starting, nine_one)
-        nine_one.add(starting, seven_three)
-        return starting
+        counter = 0
+        for weight in FACTOR_WEIGHTS:
+            DBNode(weight, counter)
+            counter += 1
+        return DBNode.Nodes[3] #Starting node of [5,5]
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -77,7 +83,12 @@ class Dynamic_beta_env:
     
     def step(self, action):
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
-        self.state = np.array([utls.get_metric(metric) for metric in ENV_METRICS])
+        if action == 0: 
+            next_index = (self.current_node.index - 1) % len(DBNode.Nodes)
+        elif action == 2: 
+            next_index = (self.current_node.index + 1) % len(DBNode.Nodes)
+        self.current_node = DBNode.Nodes[next_index]    
+        self.state = np.array([utls.get_metric(metric, self.date) for metric in ENV_METRICS])
         if self.date + timedelta(days=self.timedelta)  > TRADING_END:
             done = True
         
