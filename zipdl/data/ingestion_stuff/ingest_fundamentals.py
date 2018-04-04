@@ -60,8 +60,8 @@ Cash From Financing Activities
 import pandas as pd
 import numpy as np  
 from pathos.multiprocessing import ProcessPool as Pool
-import db
-import models
+from zipdl.data import db
+from zipdl.data import models
 
 NPROC = 8
 
@@ -80,7 +80,8 @@ def process_fundamental(metric):
     store = {}
     for ticker in set(df):
         if not all(df[ticker].isnull()):
-            store[ticker] = df[ticker]
+            series = df[ticker].dropna()
+            store[ticker] = series
     print('Ingested {}'.format(metric))
     #print(store)
     return store
@@ -92,7 +93,7 @@ def reduce_df(df, metric):
     return temp
 
 print('Beginning... ')
-full_df = pd.read_csv('../../../fundamentals.csv', low_memory=False, header=[0,1])
+full_df = pd.read_csv('../../../../fundamentals.csv', low_memory=False, header=[0,1])
 print('csv in memory')
 
 metrics = set([x[1] for x in list(full_df)[1:]])

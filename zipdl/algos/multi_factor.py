@@ -4,9 +4,13 @@ import zipline
 
 from zipline.finance import commission, slippage
 from zipline.pipeline import CustomFactor
-from zipline.api import set_commission, get_open_orders, order_target_percent, record
+from zipline.api import set_commission, get_open_orders, order_target_percent, record, get_datetime
 from zipline.pipeline.data import USEquityPricing
+from dynamic_beta_env import 
 import talib
+
+from zipdl.utils import utils
+import datetime as dt
 
 #from ingest_fundamentals import universe, fundamentals
 
@@ -26,26 +30,37 @@ RSI_UPPER = 70
 
 #==================PRIMARY==========================
 
-def initialize_environment(weight, window_length):
+def initialize_environment(weight, window_length, trading_start):
     def initialize(context):
         set_comission(commission.Pershare(cost=0.005, min_trade_cost=1.00))
-        context.Factor_weights = get_factor_weights()
+        context.universe = utils.get_current_universe(trading_start)
+        context.Factor_weights = weight
         context.window_length = window_length
+        context.curr_date = trading_start
     return initialize
-
 #schedule trading monthly
 #schedule stop loss/take gain daily
 
 def handle_data(context, data):
-    rebalance_portfolio(context, data)
+    context.universe = get_current_universe(context.curr_date)
+    v_scores = {}
+
+    def compute(self, today, ticker, out, ev_to_ebitda, pb_ratio, fcf_yield):
+        ebitda_to_ev = 1 / ev_to_ebitda
+        book_to_price = 1 / pb_ratio
+        v_score[ticker] = ebitda_to_ev * book_to_price * fcf_yield
+
     
 def rebalance_portfolio(context, data):
     # rebalance portfolio
-    close_old_position(context, data)
+    close_old_positions(context, data)
     total_weight = np.sum(context.weights.abs())
     weights = context.weights / total_weight
     for stock, weight in weights.items():
         order_target_percent(stock, weight)
+
+def before_trading_start(context):
+    context.curr_date = context.curr_date + dt.timedelta(1)
 
 #==================UTILS==========================
 
@@ -61,9 +76,6 @@ def close_old_positions(context, data):
             to_be_closed.set_value(stock, 0.0)
             
     context.weights = to_be_closed.append(context.weights)
-
-def rank(context, data):
-    pass
 
 #===================FACTORS=========================
 class ValueFactor(CustomFactor):

@@ -1,9 +1,11 @@
 from zipdl.models import DDQN_agent
 from zipdl.envs import dynamic_beta_env
+from zipdl.algos import multifactor as mf
 
 BATCH_SIZE = 32
 EPISODES = 5000
 
+algo = [mf.initialize_environment, mf.handle_data, mf.before_trading_start]
 env = dynamic_beta_env()
 state_size = env.observation_space.shape[0]
 action_size = env.action_space.n

@@ -7,14 +7,13 @@ import matplotlib.pyplot as plt
 
 from zipdl.utils import seeding
 from zipdl.utils import utils
-from zipdl.utils.spaces import Discrete, DBNode
+from zipdl.utils.spaces import Discrete, DB2Node
 
 from zipline import run_algorithm
-from zipdl.algos import multi_factor
 
 START_CASH = 5000
 #TODO: Allow partitioning of the time span of data to allow for cross-validation testing
-TRADING_START = dt.strptime('2004-01-01', '%Y-%m-%d')
+TRADING_START = dt.strptime('2010-01-01', '%Y-%m-%d')
 TRADING_END = dt.strptime('2016-01-01', '%Y-%m-%d')
 ENV_METRICS = ['t3m', 'personal savings', 'vix']
 NUM_BUCKETS = [3, 3, 3]
@@ -41,7 +40,7 @@ Where entry corresponds to model above, and a 1 in the entry corresponds to a va
 '''
 
 class Dynamic_beta_env:
-    def __init__(self, window='month', algo):
+    def __init__(self, algo, window='month'):
         '''
         Default rebalancing window = 'monthly'
         algo is a tuple of the following functions:
@@ -59,9 +58,9 @@ class Dynamic_beta_env:
         self.date = TRADING_START
 
         self.current_node = initialize_nodes()
-        self.action_space = self.current_node.action_space
+        self.action_space = Discrete(3)
         self.observation_space = Dict({metric : Discrete(bucket_num) for metric, bucket_num in zip(ENV_METRICS, NUM_BUCKETS)})
-
+        self.observation_space['Curr state'] = Discrete(len(DB2Node.Nodes2))
         self.seed()
         self.state = None
         self.steps_beyond_done = None
@@ -73,9 +72,9 @@ class Dynamic_beta_env:
         #Initialize nodes according to mdp, and return starting nodes
         counter = 0
         for weight in FACTOR_WEIGHTS:
-            DBNode(weight, counter)
+            DB2Node(weight, counter)
             counter += 1
-        return DBNode.Nodes[3] #Starting node of [5,5]
+        return DB2Node.Nodes2[3] #Starting node of [5,5]
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -84,22 +83,22 @@ class Dynamic_beta_env:
     def step(self, action):
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
         if action == 0: 
-            next_index = (self.current_node.index - 1) % len(DBNode.Nodes)
+            next_index = (self.current_node.index - 1) % len(DB2Node.Nodes)
         elif action == 2: 
-            next_index = (self.current_node.index + 1) % len(DBNode.Nodes)
-        self.current_node = DBNode.Nodes[next_index]    
-        self.state = np.array([utls.get_metric(metric, self.date) for metric in ENV_METRICS])
+            next_index = (self.current_node.index + 1) % len(DB2Node.Nodes)
+        self.current_node = DB2Node.Nodes[next_index]    
+        self.state = np.array([utls.get_metric_bucket(self.date, metric) for metric in ENV_METRICS]).append(self.current_node.id)
         if self.date + timedelta(days=self.timedelta)  > TRADING_END:
             done = True
         
-        intialize = self.algo[0](self.current_node.weights, self.window)
+        intialize = self.algo[0](self.current_node.weights, self.window, self.date)
         handle_data = self.algo[1]
-        rebalance = self.algo[2]
+        before_trading_start = self.algo[2]
         start = self.date
         end = self.date + dt.timedelta(self.timedelta) + 1
 
         perf = run_algorithm(start, end, intialize, START_CASH,
-                            handle_data=handle_data)
+                            handle_data=handle_data, before_trading_start=before_trading_start)
 
         self.date = self.date + dt.timedelta(days=1)
         #Reward is weekly sortino
@@ -121,7 +120,7 @@ class Dynamic_beta_env:
         if RENDER:
             reset_render()
         self.date = TRADING_START
-        metrics = [utils.get_metric(metric) for metric in ENV_METRICS]
+        metrics = [utils.get_metric_bucket(self.date, metric) for metric in ENV_METRICS]
         self.state = metrics
         self.steps_beyond_done = None
         return np.array(self.state)

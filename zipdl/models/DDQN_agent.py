@@ -16,8 +16,6 @@ EPSILON_DECAY = 0.99 #Rate of exploration decay
 LEARNING_RATE = 0.001 
 LAYER_DIMENSION = 24
 
-SORTINO_GOAL = 1.2
-
 class DDQNAgent:
     def __init__(self, state_size, action_size, algo):
         self.state_size = state_size
@@ -29,18 +27,9 @@ class DDQNAgent:
         self.epsilon_decay = EPSILON_DECAY
         self.learning_rate = LEARNING_RATE
         self.model = self._build_model()
-        self.target_model = self.build_model()
+        self.target_model = self._build_model()
         self.update_target_model()
         self.algo = algo
-
-    def _finance_loss(self, model_metric, goal=SORTINO_GOAL):
-        '''
-        Huber loss with target as the metric 
-        (We look for a constant adjusted rate of risk-reward,
-            and reward any performance higher than that)
-        '''
-        #TODO: Calculate metric
-        return self._huber_loss(goal, model)
             
     def _huber_loss(self, target, prediction):
         error = prediction-target
@@ -52,9 +41,9 @@ class DDQNAgent:
         model.add(Dense(LAYER_DIMENSION, input=self.state_size, activation='relu'))
         model.add(Dense(LAYER_DIMENSION, activation='relu'))
         model.add(Dense(self.action_size, activation='linear'))
-        model.compile(loss=self._finance_loss,
+        model.compile(loss=self._huber_loss,
                         optimizer=Adam(lr=self.learning_rate))
-        return models
+        return model
 
     def update_target_model(self):
         # copy weights from model to target_model

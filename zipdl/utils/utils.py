@@ -19,8 +19,31 @@ from zipdl.data import models as m
 session = db.create_session()
 
 import datetime as dt
+import pandas as pd
 
 METRIC_DICT = {}
+
+#==========Ticker Fundamental Utilities=========================================
+memoized = {}
+def get_current_universe(date):
+    if date in memoized:
+        return memoized[date]
+    all_stocks = session.query(m.Fundamentals).filter(m.Fundamentals.metric == 'Gross Margin').all()
+    universe = []
+    try:
+        curr = dt.datetime.strptime(date, '%Y-%m-%d')
+    else:
+        assert isinstance(curr, dt.datetime)
+    for stock in all_stocks:
+        series = pd.Series(stock.time_series)
+        first = dt.datetime.strptime(series.index[0], '%Y-%m-%d')
+        if first <= curr:
+            universe.append(stock.ticker)
+    memoized[date] = universe
+    return universe
+
+
+#==========Market Metric Utilities===============================================
 
 def translate_metric(value, bins):
     for num, b in enumerate(bins):
@@ -32,12 +55,13 @@ def translate_metric(value, bins):
 def get_metric(date, metric, session=db.create_session()):
     assert metric in [x.metric for x in session.query(Market_Metric).all()]
     metric = session.query(m.Market_Metric).filter(m.Market_Metric.metric==metric).all()[0]
-    series = metric.time_series.copy()
+    series = metric.time_series
     strings_to_date(series, '%Y-%m-%d')
-    closest_date = find_closest_date(series.keys, date)
+    closest_date = find_closest_date(series.keys(), date)
     return series[closest_date]
 
-def get_metric_bucket(metric, date):
+def get_metric_bucket(date, metric):
+    assert isinstance(date, dt.datetime)
     assert metric in list(METRIC_DICT.keys())
     val = get_metric(date, metric)
     return METRIC_DICT[metric](val)
@@ -79,7 +103,7 @@ def transform_ttm(value):
 METRIC_DICT['ttm'] = transform_ttm
 
 def find_closest_date(items, pivot):
-    return min(items, key=lambda x: abs((x - pivot).days)
+    return min(items, key=lambda x: abs((x - pivot).days))
 
 def calc_sortino(perf):
     returns = perf['portfolio_value'][::5].pct_change()[1:]
