@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np  
-import db
-import models
+from zipdl.data import db
+from zipdl.data import models
 
 UNIVERSE = pd.read_csv('universe.csv')
 blmbg_data = pd.read_csv('shares_outstanding_data.csv',low_memory=False, header=[0,1])

@@ -4,7 +4,7 @@ import zipline
 
 from zipline.finance import commission, slippage
 from zipline.pipeline import CustomFactor
-from zipline.api import set_commission, get_open_orders, order_target_percent, record, get_datetime
+from zipline.api import set_commission, get_open_orders, symbol, order_target_percent, record, get_datetime
 from zipline.pipeline.data import USEquityPricing
 from dynamic_beta_env import 
 import talib
@@ -42,14 +42,7 @@ def initialize_environment(weight, window_length, trading_start):
 #schedule stop loss/take gain daily
 
 def handle_data(context, data):
-    context.universe = get_current_universe(context.curr_date)
-    v_scores = {}
-
-    def compute(self, today, ticker, out, ev_to_ebitda, pb_ratio, fcf_yield):
-        ebitda_to_ev = 1 / ev_to_ebitda
-        book_to_price = 1 / pb_ratio
-        v_score[ticker] = ebitda_to_ev * book_to_price * fcf_yield
-
+    pass
     
 def rebalance_portfolio(context, data):
     # rebalance portfolio
@@ -84,12 +77,13 @@ class ValueFactor(CustomFactor):
     its book-price, FCF-price, and EBITDA-EV ratio, where a higher value is 
     desirable.
     """
-    inputs = [fundamentals['EBITDA'],
-              fundamentals['Gross Margin'],
-              fundamentals['Free Cash Flow']]
+    inputs = []
     window_length = 1
     
-    def compute(self, today, asset_ids, out, ev_to_ebitda, pb_ratio, fcf_yield):
+    def compute(self, today, asset_ids, out):
+        context.universe = get_current_universe(context.curr_date)
+        stocks = [symbol(ticker) for ticker in context.universe]
+        ebit = [utils.get_fundamental(context.curr_date, 'EBIT', ticker) for ticker in context.universe]
         ebitda_to_ev = 1 / ev_to_ebitda
         book_to_price = 1 / pb_ratio
         out[:] = ebitda_to_ev * book_to_price * fcf_yield

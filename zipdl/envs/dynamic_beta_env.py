@@ -15,7 +15,7 @@ START_CASH = 5000
 #TODO: Allow partitioning of the time span of data to allow for cross-validation testing
 TRADING_START = dt.strptime('2010-01-01', '%Y-%m-%d')
 TRADING_END = dt.strptime('2016-01-01', '%Y-%m-%d')
-ENV_METRICS = ['t3m', 'personal savings', 'vix']
+ENV_METRICS = ['t3m', 'ps-1mdelat', 'vix']
 NUM_BUCKETS = [3, 3, 3]
 #Where the first element is the starting factor weighting
 FACTOR_WEIGHTS = [[0.1, 0.9], [0.3, 0.7], [0.5, 0.5], [0.7, 0.3], [0.9, 0.1]]

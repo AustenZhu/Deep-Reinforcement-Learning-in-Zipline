@@ -12,6 +12,8 @@ T6M_BUCKETS = [0.0193284320648, 0.0806490876864]
 TTM_BUCKETS = [0.057386937542, 0.145046716341]
 SAVINGSD1M_BUCKETS = [-0.0261929824561, 0.0357532467532]
 SAVINGS_BUCKETS = [4.5, 5.6]
+FUNDAMENTALS = ['Gross Margin', 'Cash From Investing Activities', 'Minorities', 'Free Cash Flow', 'Total Noncurrent Assets', 'Net PP&E', 'Income Taxes', 'Depreciation & Amortisation', 'Change in Working Capital', 'Equity Before Minorities', 'Cash and Cash Equivalents', 'SG&A', 'Goodwill', 'Cash From Operating Activities', 'Return on Equity', 'Retained Earnings', 'Current Assets', 'Net Change in PP&E & Intangibles', 'Dividends', 'Accounts Payable', 'Return on Assets', 'Net Change in Cash', 'Current Ratio', 'Net Income from Discontinued Op.', 'Treasury Stock', 'Total Noncurrent Liabilities', 'Share Capital', 'Revenues', 'Long Term Debt', 'EBITDA', 'Total Assets', 'Total Liabilities', 'Intangible Assets', 'EBIT', 'Net Profit Margin', 'R&D', 'COGS', 'Liabilities to Equity Ratio', 'Abnormal Gains/Losses', 'Net Profit', 'Preferred Equity', 'Total Equity', 'Debt to Assets Ratio', 'Current Liabilities', 'Receivables', 'Operating Margin', 'Short term debt', 'Cash From Financing Activities']
+
 
 import numpy as np
 from zipdl.data import db
@@ -19,10 +21,11 @@ from zipdl.data import models as m
 session = db.create_session()
 
 import datetime as dt
+from dateutil import parser
 import pandas as pd
 
 METRIC_DICT = {}
-
+session=db.create_session()
 #==========Ticker Fundamental Utilities=========================================
 memoized = {}
 def get_current_universe(date):
@@ -32,7 +35,7 @@ def get_current_universe(date):
     universe = []
     try:
         curr = dt.datetime.strptime(date, '%Y-%m-%d')
-    else:
+    except:
         assert isinstance(curr, dt.datetime)
     for stock in all_stocks:
         series = pd.Series(stock.time_series)
@@ -42,17 +45,19 @@ def get_current_universe(date):
     memoized[date] = universe
     return universe
 
+def find_closest_date(items, pivot):
+    return min(items, key=lambda x: abs((x - pivot).days))
 
 #==========Market Metric Utilities===============================================
 
 def translate_metric(value, bins):
     for num, b in enumerate(bins):
-        if value > b: 
+        if value < b: 
             return num
     else: 
         return len(bins)
 
-def get_metric(date, metric, session=db.create_session()):
+def get_metric(date, metric, session=session):
     assert metric in [x.metric for x in session.query(Market_Metric).all()]
     metric = session.query(m.Market_Metric).filter(m.Market_Metric.metric==metric).all()[0]
     series = metric.time_series
@@ -102,8 +107,14 @@ def transform_ttm(value):
     return translate_metric(value, TTM_BUCKETS)
 METRIC_DICT['ttm'] = transform_ttm
 
-def find_closest_date(items, pivot):
-    return min(items, key=lambda x: abs((x - pivot).days))
+#===================Fundamentals=============================
+def get_fundamental(date, fundamental, ticker, session=session):
+    assert fundamental in FUNDAMENTALS
+    fundamental = session.query(m.Fundamentals).filter(m.Fundamentals.metric==fundamental).all()[0]
+    series = fundamental.time_series
+    strings_to_date(series, '%Y-%m-%d')
+    closest_date = find_closest_date(series.keys(), date)
+    return series[closest_date]
 
 def calc_sortino(perf):
     returns = perf['portfolio_value'][::5].pct_change()[1:]
@@ -112,10 +123,10 @@ def calc_sortino(perf):
     tdd = np.sqrt(np.sum([min(0, returns - weekly_mar)]))
     return (returns.mean() - weekly_mar)/tdd
 
-def strings_to_date(mydict, str_format):
+def strings_to_date(mydict):
     origlen = len(mydict.keys())
     for key in list(mydict.keys()):
-        mydict[datetime.strptime(key, str_format)] = mydict[key]
+        mydict[parser.parse(key)] = mydict[key]
         del mydict[key]
     assert origlen == len(mydict.keys())
 def dates_to_string(mydict):
