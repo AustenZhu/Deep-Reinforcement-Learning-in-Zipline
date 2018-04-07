@@ -1,1 +1,1 @@
-jupyter nbconvert --to html --execute --ExecutePreprocessor.timeout=120 Quantopian_Algo_Runner.ipynb; chromium-browser --headless --disable-gpu --print-to-pdf Quantopian_Algo_Runner.html; sudo python3 slackbot.py;
+sudo jupyter nbconvert --to html --execute --ExecutePreprocessor.timeout=120 Quantopian_Algo_Runner.ipynb; chromium-browser --headless --disable-gpu --print-to-pdf Quantopian_Algo_Runner.html; sudo python3 slackbot.py;
