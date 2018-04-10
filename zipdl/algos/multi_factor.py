@@ -2,16 +2,16 @@ import numpy as numpy
 import pyfolio
 import zipline
 
+
 from zipline.finance import commission, slippage
-from zipline.pipeline import CustomFactor
-from zipline.api import set_commission, get_open_orders, symbol, order_target_percent, record, get_datetime
+from zipline.pipeline import Pipeline, CustomFactor
+from zipline.pipline.filters import StaticAssets
+from zipline.api import set_commission, get_open_orders, symbol, sid, order_target_percent, record, get_datetime, attach_pipeline, schedule_function
 from zipline.pipeline.data import USEquityPricing
-from dynamic_beta_env import 
 import talib
 
 from zipdl.utils import utils
 import datetime as dt
-
 #from ingest_fundamentals import universe, fundamentals
 
 # Lookback window, in days, for Momentum (Bollinger Bands and RSI) factor
@@ -24,9 +24,33 @@ TREND_FOLLOW = True
 BBUPPER = 1.5
 BBLOWER = 1.5
 
+NORMALIZE_VALUE_SCORES = False
+
 # Upper/lower scores required for RSI signal
 RSI_LOWER = 30
 RSI_UPPER = 70
+
+# Percentile in range [0, 1] of stocks that are shorted/bought
+SHORTS_PERCENTILE = 0.05
+LONGS_PERCENTILE = 0.05
+
+# Constraint Parameters
+MAX_GROSS_LEVERAGE = 1.0
+
+DOLLAR_NEUTRAL = False
+
+# If True, will screen out companies that have earnings releases between rebalance periods
+AVOID_EARNINGS = True
+
+# If False, shorts won't be ordered
+ALLOW_SHORTS = True
+
+# If True, will cut positions causing losses of LOSS_THRESHOLD or more
+CUT_LOSSES = False
+
+# Positions losing this much or more as a fraction of the investment will be cut if CUT_LOSSES is True
+LOSS_THRESHOLD = 0.03
+
 
 #==================PRIMARY==========================
 
@@ -37,6 +61,9 @@ def initialize_environment(weight, window_length, trading_start):
         context.Factor_weights = weight
         context.window_length = window_length
         context.curr_date = trading_start
+        context.mask = StaticAssets(context.universe)
+
+
     return initialize
 #schedule trading monthly
 #schedule stop loss/take gain daily
@@ -53,7 +80,76 @@ def rebalance_portfolio(context, data):
         order_target_percent(stock, weight)
 
 def before_trading_start(context):
-    context.curr_date = context.curr_date + dt.timedelta(1)
+    if not context.run_pipeline:
+        return
+
+    # Do some pre-work on factors
+    if NORMALIZE_VALUE_SCORES:
+        normalizeValueScores(context)
+        
+    if not ST_SHORTS:
+        # Get indices where Sentiment Score < 0
+        invalid_indices = (context.output['sentiment_score'] < 0)
+        # Set those indices to 0
+        context.output.loc[invalid_indices, 'sentiment_score'] = 0.0
+    
+    context.output = context.output.drop(['industry', 'tweets_avg'], axis=1)
+    
+    if PRINT_PIPE:
+        log.info(context.output.head())
+        log.info(len(context.output))
+    
+    # Rank each column of pipeline output (higher rank is better). Then create composite score based on weighted average of factor ranks
+    individual_ranks = context.output.rank()
+    individual_ranks *= context.Factor_weights
+    ranks = individual_ranks.sum(axis=1).dropna().sort_values() + 1
+
+    
+    number_shorts = int(SHORTS_PERCENTILE*len(ranks))
+    number_longs = int(LONGS_PERCENTILE*len(ranks))
+    
+    if number_shorts == 1 or number_longs == 1:
+        number_shorts = number_longs = 0
+
+    if (number_shorts + number_longs) > len(ranks):
+        ratio = float(number_longs)/number_shorts
+        number_longs = int(ratio*len(ranks)) - 1
+        number_shorts = len(ranks) - number_longs
+        
+    shorts = 1.0 / ranks.head(number_shorts)
+    shorts /= sum(shorts)
+    shorts *= -1
+    
+    longs = ranks.tail(number_longs)
+    longs /= sum(longs)
+    
+    if ALLOW_SHORTS:
+        context.weights = shorts.append(longs)
+    else:
+        context.weights = longs
+    # log.info(context.weights)
+        
+    context.output = context.output.rename(columns={'momentum_score':'momentum','sentiment_score': 'sentiment', 'value_score': 'value'})
+    print("WEIGHTS: \n" + str(context.weights))
+    
+    comp_scores = context.output * context.Factor_weights
+    comp_scores = comp_scores.sum(axis=1)
+    comp_scores.name = 'composite'
+    scores = pd.concat([comp_scores, context.output], axis=1)
+    scores = scores.fillna(value=0.0)
+    scores = scores.sort_values('composite').round(4)
+    print("FACTOR SCORES: \n" + str(scores.loc[context.weights.index, :]))
+
+    ranks.name = 'ranks'
+    ranked_scores = pd.concat([ranks, comp_scores, context.output], axis=1)
+    ranked_scores = ranked_scores.fillna(value=0.0)
+    ranked_scores = ranked_scores.sort_values('ranks')
+    ranked_scores = ranked_scores.drop(['ranks'], axis=1)
+    ranked_scores = ranked_scores.round(4)
+    print("BOTTOM SCORES: \n" + str(ranked_scores.head(10)))
+    print("TOP SCORES: \n" + str(ranked_scores.tail(10)))
+    print("Number in universe" + str(len(ranked_scores)))
+    
 
 #==================UTILS==========================
 
@@ -77,16 +173,43 @@ class ValueFactor(CustomFactor):
     its book-price, FCF-price, and EBITDA-EV ratio, where a higher value is 
     desirable.
     """
-    inputs = []
+    inputs = [USEquityPricing.close]
     window_length = 1
+    mask = context.mask
     
-    def compute(self, today, asset_ids, out):
-        context.universe = get_current_universe(context.curr_date)
-        stocks = [symbol(ticker) for ticker in context.universe]
-        ebit = [utils.get_fundamental(context.curr_date, 'EBIT', ticker) for ticker in context.universe]
-        ebitda_to_ev = 1 / ev_to_ebitda
-        book_to_price = 1 / pb_ratio
-        out[:] = ebitda_to_ev * book_to_price * fcf_yield
+    def compute(self, today, asset_ids, out, close):
+        context.curr_date = today.astype(dt.datetime) 
+        stocks = [symbol(ticker).sid for ticker in context.universe]
+        #for verification
+        print(asset_ids, stocks) 
+        
+        shares_outstanding = pd.Series([utils.get_fundamental(context.curr_date, 'Shares_Outstanding', ticker) for ticker in context.universe], stocks).sort_index()
+        prices = pd.Series(close, asset_ids).sort_index
+        market_cap = prices * shares_outstanding
+        #ev_to_ebitda
+        ebitda = pd.Series([utils.get_fundamental(context.curr_date, 'EBITDA', ticker) for ticker in context.universe], stocks).sort_index()
+        shortTermDebt = pd.Series([utils.get_fundamental(context.curr_date, 'Short term debt', ticker) for ticker in context.universe], stocks).sort_index()
+        longTermDebt = pd.Series([utils.get_fundamental(context.curr_date, 'Long Term Debt', ticker) for ticker in context.universe], stocks).sort_index()
+        c_and_c_equivs = pd.Series([utils.get_fundamental(context.curr_date, 'Cash and Cash Equivalents', ticker) for ticker in context.universe], stocks).sort_index()
+        ev = shortTermDebt + longTermDebt + market_cap - c_and_c_equivs
+        ebitda_to_ev = ebitda / ev
+        
+        #Book to price
+        totalAssets = pd.Series([utils.get_fundamental(context.curr_date, 'Total Assets', ticker) for ticker in context.universe], stocks).sort_index()
+        totalLiab = pd.Series([utils.get_fundamental(context.curr_date, 'Total Liabilities', ticker) for ticker in context.universe], stocks).sort_index()
+        book_to_price = (totalAssets - totalLiab) / shares_outstanding
+
+        fcf = pd.Series([utils.get_fundamental(context.curr_date, 'Free Cash Flow', ticker) for ticker in context.universe], stocks).sort_index()
+        fcf_yield = fcf / close
+
+        values = ebitda_to_ev * book_to_price * fcf_yield
+        ordering = [values[sid] for sid in asset_ids] 
+
+        out[:] = ordering
+
+        #Preparation for next trading day
+        context.universe = utils.get_current_universe(context.curr_date + dt.timedelta(1))
+        context.mask = StaticAssets(context.universe)
 
 class MomentumFactor(CustomFactor):
     """
@@ -128,3 +251,21 @@ class MomentumFactor(CustomFactor):
                 
             if TREND_FOLLOW:
                 out[i] *= -1
+#============================Pipeline Stuff=============================
+def make_pipeline():
+    base_universe = np.array(pd.read_csv('../data/universe.csv'))
+    value_factor = ValueFactor()
+    momentum_factor = MomentumFactor()
+
+    pipe = Pipeline(
+        columns = {
+            'value_score': value_factor,
+            'momentum_score': momentum_factor,
+        }
+    )
+    return pipe
+def prime_pipeline(context, data):
+    context.weeks_since_rebalance += 1
+    if context.weeks_since_rebalance >= REBALANCE_PERIOD:
+        context.run_pipeline = True
+        context.weeks_since_rebalance = 0

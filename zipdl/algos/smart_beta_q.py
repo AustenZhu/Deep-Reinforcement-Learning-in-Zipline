@@ -145,8 +145,6 @@ def initialize(context):
      
     # Create our dynamic stock selector.
     attach_pipeline(make_pipeline(), 'my_pipeline')
-  
-def rank(context)
 
 class ValueFactor(CustomFactor):
     """
