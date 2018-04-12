@@ -1,19 +1,21 @@
 import numpy as np
 import pandas as pd
-import pyfolio
+from numexpr import evaluate
 import zipline
 
-
+from zipline.pipeline.factors.technical import RSI
 from zipline.finance import commission, slippage
 from zipline.pipeline import Pipeline, CustomFactor
 from zipline.pipeline.filters import StaticAssets
 from zipline.data import bundles
 from zipline.api import *
 from zipline.pipeline.data import USEquityPricing
-import talib
+from zipline.utils.math_utils import nanmean, nanstd
 
 from zipdl.utils import utils
 import datetime as dt
+
+#TODO: Process value metrics, so that less db calls required
 
 # Weeks between a rebalance
 REBALANCE_PERIOD = 4
@@ -27,6 +29,7 @@ TREND_FOLLOW = True
 # Upper/lower SD's required for Bollinger Band signal
 BBUPPER = 1.5
 BBLOWER = 1.5
+BBSTD = 1.5
 
 NORMALIZE_VALUE_SCORES = False
 
@@ -71,11 +74,18 @@ def safe_symbol_convert(tickers):
     filtered_list = list(filter(None.__ne__, [safe_symbol(ticker) for ticker in tickers]))
     assets = bundle_data.asset_finder.lookup_symbols(filtered_list, as_of_date=None)
     return assets
+
+def universe_transform(date):
+    universe = utils.get_current_universe(date)
+    tradable_assets = safe_symbol_convert(universe)
+    return tradable_assets
+
 #==================PRIMARY==========================
 def initialize_environment(weight, trading_start):
     def initialize(context):
         set_commission(commission.PerShare(cost=0.005, min_trade_cost=1.00))
-        context.universe = utils.get_current_universe(trading_start)
+        context.universe = universe_transform(trading_start)
+
         context.Factor_weights = weight
         context.curr_date = trading_start
 
@@ -97,8 +107,10 @@ def initialize_environment(weight, trading_start):
 #schedule stop loss/take gain daily
 
 def handle_data(context, data):
-    pass
-    
+    #Daily function
+    context.curr_date += dt.timedelta(days=1)
+    context.universe = universe_transform(context.curr_date)
+
 def rebalance_portfolio(context, data):
     # rebalance portfolio
     close_old_positions(context, data)
@@ -110,8 +122,41 @@ def rebalance_portfolio(context, data):
 def before_trading_start(context, data):
     if not context.run_pipeline:
         return
+    
+    context.run_pipeline = False
+    def compute(today, symbols, close):
+        #for verification
+        #tickers = [asset.symbol for asset in bundle_data.asset_finder.retrieve_all(asset_ids)]
+        tickers = [symbol.symbol for symbol in symbols]
+        
+        shares_outstanding = np.array(get_fundamentals(today, 'Shares_Outstanding', tickers))
+        market_cap = close * shares_outstanding
+        #ev_to_ebitda
+        ebitda = np.array(get_fundamentals(today, 'EBITDA', tickers))
+        shortTermDebt = np.array(get_fundamentals(today, 'Short term debt', tickers))
+        longTermDebt = np.array(get_fundamentals(today, 'Long Term Debt', tickers))
+        c_and_c_equivs = np.array(get_fundamentals(today, 'Cash and Cash Equivalents', tickers))
+        ev = shortTermDebt + longTermDebt + market_cap - c_and_c_equivs
+        ebitda_to_ev = ebitda / ev
+        
+        #Book to price
+        totalAssets = np.array(get_fundamentals(today, 'Total Assets', tickers))
+        totalLiab = np.array(get_fundamentals(today, 'Total Liabilities', tickers))
+        book_to_price = (totalAssets - totalLiab) / shares_outstanding
 
+        fcf = np.array(get_fundamentals(today, 'Free Cash Flow', tickers))
+        fcf_yield = fcf / close
+
+        values = ebitda_to_ev * book_to_price * fcf_yield
+        #print(values)
+        out = pd.Series(values, symbols)
+        return out
+    close = np.array([data.current(symbol, 'price') for symbol in context.universe])
+    value_factor = compute(context.curr_date, context.universe, close).to_frame()
     context.output = pipeline_output('my_pipeline')
+    context.output = context.output.join(value_factor).dropna()
+    print('Context')
+    print(context.output)
 
     # Do some pre-work on factors
     if NORMALIZE_VALUE_SCORES:
@@ -145,29 +190,8 @@ def before_trading_start(context, data):
         context.weights = shorts.append(longs)
     else:
         context.weights = longs
-    print(context.weights)
+    #print(context.weights)
     # log.info(context.weights)
-        
-'''    context.output = context.output.rename(columns={'momentum_score':'momentum','sentiment_score': 'sentiment', 'value_score': 'value'})
-    print("WEIGHTS: \n" + str(context.weights))
-    
-    comp_scores = context.output * context.Factor_weights
-    comp_scores = comp_scores.sum(axis=1)
-    comp_scores.name = 'composite'
-    scores = pd.concat([comp_scores, context.output], axis=1)
-    scores = scores.fillna(value=0.0)
-    scores = scores.sort_values('composite').round(4)
-    print("FACTOR SCORES: \n" + str(scores.loc[context.weights.index, :]))
-
-    ranks.name = 'ranks'
-    ranked_scores = pd.concat([ranks, comp_scores, context.output], axis=1)
-    ranked_scores = ranked_scores.fillna(value=0.0)
-    ranked_scores = ranked_scores.sort_values('ranks')
-    ranked_scores = ranked_scores.drop(['ranks'], axis=1)
-    ranked_scores = ranked_scores.round(4)
-    print("BOTTOM SCORES: \n" + str(ranked_scores.head(10)))
-    print("TOP SCORES: \n" + str(ranked_scores.tail(10)))
-    print("Number in universe" + str(len(ranked_scores)))'''
     
 
 #==================UTILS==========================
@@ -188,40 +212,6 @@ def close_old_positions(context, data):
 #===================FACTORS=========================
 DB_FACTORS_USED = ['Shares_Outstanding', 'EBITDA', 'Short term debt', 'Long Term Debt', 'Cash and Cash Equivalents',
                     'Total Assets', 'Total Liabilities', 'Free Cash Flow']
-class ValueFactor(CustomFactor):
-    """
-    For every stock, computes a value score for it, defined as the product of 
-    its book-price, FCF-price, and EBITDA-EV ratio, where a higher value is 
-    desirable.
-    """
-    inputs = [USEquityPricing.close]
-    window_length = 1
-    
-    def compute(self, today, asset_ids, out, close):
-        #for verification
-        tickers = [asset.symbol for asset in bundle_data.asset_finder.retrieve_all(asset_ids)]
-        #print(tickers)
-        
-        shares_outstanding = np.array([get_fundamentals(today, 'Shares_Outstanding', tickers)])
-        market_cap = close * np.array([shares_outstanding])
-        #ev_to_ebitda
-        ebitda = np.array([get_fundamentals(today, 'EBITDA', tickers)])
-        shortTermDebt = np.array([get_fundamentals(today, 'Short term debt', tickers)])
-        longTermDebt = np.array([get_fundamentals(today, 'Long Term Debt', tickers)])
-        c_and_c_equivs = np.array([get_fundamentals(today, 'Cash and Cash Equivalents', tickers)])
-        ev = shortTermDebt + longTermDebt + market_cap - c_and_c_equivs
-        ebitda_to_ev = ebitda / ev
-        
-        #Book to price
-        totalAssets = np.array([get_fundamentals(today, 'Total Assets', tickers)])
-        totalLiab = np.array([get_fundamentals(today, 'Total Liabilities', tickers)])
-        book_to_price = (totalAssets - totalLiab) / shares_outstanding
-
-        fcf = np.array([get_fundamentals(today, 'Free Cash Flow', tickers)])
-        fcf_yield = fcf / close
-
-        values = ebitda_to_ev * book_to_price * fcf_yield
-        out[:] = values
 
 class MomentumFactor(CustomFactor):
     """
@@ -230,50 +220,49 @@ class MomentumFactor(CustomFactor):
     (return 0). For a signal, both metrics have to indicate the same signal 
     (e.g., price below lower Bollinger Band and RSI below RSI_LOWER)
     """
-    window_length = MOMENTUM_LOOKBACK+10
     inputs = [USEquityPricing.close]
+    window_length = MOMENTUM_LOOKBACK+10
     
     def compute(self, today, asset_ids, out, close):
+        diffs = np.diff(close, axis=0)
+        ups = nanmean(np.clip(diffs, 0, np.inf), axis=0)
+        downs = abs(nanmean(np.clip(diffs, -np.inf, 0), axis=0))
+        rsi = np.zeros(len(out))
+        evaluate(
+            "100 - (100 / (1 + (ups / downs)))",
+            local_dict={'ups': ups, 'downs': downs},
+            global_dict={},
+            out=rsi,
+        )
+        
+        difference = BBSTD * nanstd(close, axis=0)
+        middle = nanmean(close, axis=0)
+        upper = middle + difference
+        lower = middle - difference
+
         for i in range(len(out)):
             out[i] = 0
-            prices = close[:, i]
-            try:
-                upperBand, middleBand, lowerBand = talib.BBANDS(
-                    prices,
-                    timeperiod = MOMENTUM_LOOKBACK,
-                    nbdevup=BBUPPER,
-                    nbdevdn=BBLOWER,
-                    matype=0)
+            if rsi[i] < RSI_LOWER:
+                out[i] += RSI_LOWER / rsi[i]
+            elif rsi[i] > RSI_UPPER:
+                out[i] -= rsi[i] / RSI_UPPER
                 
-                rsi = talib.RSI(prices, timeperiod=MOMENTUM_LOOKBACK)
-                               
-            except:
-                out[i] = 0
-                continue
-            
-            out[i] = 0
-            if rsi[-1] < RSI_LOWER:
-                out[i] += .5
-            elif rsi[-1] > RSI_UPPER:
-                out[i] -= .5
-            if prices[-1] < lowerBand[-1]:
-                out[i] += .5
-            elif prices[-1] > upperBand[-1]:
-                out[i] -= .5
+            prices = close[:, i]
+            if prices[-1] < lower[i]:
+                out[i] += lower[i] / prices[-1]
+            elif prices[-1] > upper[i]:
+                out[i] -= prices[-1] / upper[i]
                 
             if TREND_FOLLOW:
                 out[i] *= -1
 #============================Pipeline Stuff=============================
 def make_pipeline(context):
-    tradable_assets = safe_symbol_convert(context.universe)
-    screen = StaticAssets(tradable_assets)
-    context.universe = tradable_assets
+    
+    screen = StaticAssets(context.universe)
 
-    value_factor = ValueFactor()
     momentum_factor = MomentumFactor()
     pipe = Pipeline(
         columns = {
-            'value_score': value_factor,
             'momentum_score': momentum_factor,
         }
     )

@@ -126,7 +126,8 @@ def get_fundamental(date, fundamental, ticker, session=session):
     closest_date = find_closest_date(series.keys(), date)
     return series[closest_date]
 
-def get_fundamentals(date, fundamental, tickers, session=session):
+from zipdl.data import models as m
+def get_fundamentals(date, fundamental, tickers, session=utils.session):
     data = session.query(m.Fundamentals).filter(m.Fundamentals.metric==fundamental).all()
     data = [obj for obj in data if obj.ticker in tickers]
     dict_tickers = [obj.ticker for obj in data]
@@ -135,11 +136,16 @@ def get_fundamentals(date, fundamental, tickers, session=session):
         #print(obj.ticker)
         if not obj.time_series:
             return np.nan
-        close = find_closest_date(obj.time_series.keys(), date)
+        close = utils.find_closest_date(obj.time_series.keys(), date)
         return obj.time_series[close]
     values = [get_close(obj, date) for obj in data]
     dictionary = dict(zip(dict_tickers, values))
-    return [dictionary[ticker] if ticker in dictionary else np.nan for ticker in tickers]
+    def ret_correct(ticker):
+        if ticker in dict_tickers:
+            index = dict_tickers.index(ticker)
+            return values[index]
+        return np.nan
+    return [ret_correct(ticker) for ticker in tickers]
 
 def calc_sortino(perf):
     returns = perf['portfolio_value'][::5].pct_change()[1:]
