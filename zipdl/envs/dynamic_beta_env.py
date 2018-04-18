@@ -40,7 +40,7 @@ Where entry corresponds to model above, and a 1 in the entry corresponds to a va
 '''
 
 class Dynamic_beta_env:
-    def __init__(self, algo, window='month'):
+    def __init__(self, trading_start):
         '''
         Default rebalancing window = 'monthly'
         algo is a tuple of the following functions:
@@ -52,18 +52,15 @@ class Dynamic_beta_env:
         )
         '''
         self.starting_cash = START_CASH
-        self.window = window
-        if window == 'month':
-            self.timedelta = 31
-        self.date = TRADING_START
 
         self.current_node = initialize_nodes()
         self.action_space = Discrete(3)
-        self.observation_space = Dict({metric : Discrete(bucket_num) for metric, bucket_num in zip(ENV_METRICS, NUM_BUCKETS)})
+        self.observation_space = dict({metric : Discrete(bucket_num) for metric, bucket_num in zip(ENV_METRICS, NUM_BUCKETS)})
         self.observation_space['Curr state'] = Discrete(len(DB2Node.Nodes2))
         self.seed()
-        self.state = None
-        self.steps_beyond_done = None
+        self.start = trading_start
+        self.state = np.array([utils.get_metric_bucket(date, metric) for metric in ENV_METRICS]).append(self.current_node.id)
+        self.prev_state = None
 
         if RENDER:
             reset_render()
@@ -76,39 +73,19 @@ class Dynamic_beta_env:
             counter += 1
         return DB2Node.Nodes2[3] #Starting node of [5,5]
 
-    def seed(self, seed=None):
-        self.np_random, seed = seeding.np_random(seed)
-        return [seed]
-    
+    def update_state(date):
+        self.prev_state = self.state  
+        self.state = np.array([utils.get_metric_bucket(date, metric) for metric in ENV_METRICS]).append(self.current_node.id)
+        return self.state
+
     def step(self, action):
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
         if action == 0: 
             next_index = (self.current_node.index - 1) % len(DB2Node.Nodes)
         elif action == 2: 
             next_index = (self.current_node.index + 1) % len(DB2Node.Nodes)
-        self.current_node = DB2Node.Nodes[next_index]    
-        self.state = np.array([utls.get_metric_bucket(self.date, metric) for metric in ENV_METRICS]).append(self.current_node.id)
-        if self.date + timedelta(days=self.timedelta)  > TRADING_END:
-            done = True
-        
-        intialize = self.algo[0](self.current_node.weights, self.window, self.date)
-        handle_data = self.algo[1]
-        before_trading_start = self.algo[2]
-        start = self.date
-        end = self.date + dt.timedelta(self.timedelta) + 1
-
-        perf = run_algorithm(start, end, intialize, START_CASH,
-                            handle_data=handle_data, before_trading_start=before_trading_start)
-
-        self.date = self.date + dt.timedelta(days=1)
-        #Reward is weekly sortino
-        reward = utils.calc_sortino(perf)
-
-        if RENDER:
-            self.update_viewer(reward)
-
-        return np.array(self.state), reward, done, {}
-
+        self.current_node = DB2Node.Nodes[next_index]
+        return self.current_node.weights
 
     def reset(self):
         '''
@@ -119,10 +96,8 @@ class Dynamic_beta_env:
             self.counter += 1
         if RENDER:
             reset_render()
-        self.date = TRADING_START
-        metrics = [utils.get_metric_bucket(self.date, metric) for metric in ENV_METRICS]
+        metrics = [utils.get_metric_bucket(self.start, metric) for metric in ENV_METRICS]
         self.state = metrics
-        self.steps_beyond_done = None
         return np.array(self.state)
 
     def render(self):
@@ -134,7 +109,7 @@ class Dynamic_beta_env:
     
     def reset_render(self):
         self.min_x = 0
-        self.max_x = (TRADING_END - TRADING_START - self.timedelta).days #ie. the max size of the training set
+        #self.max_x = (TRADING_END - TRADING_START - self.timedelta).days #ie. the max size of the training set
         self.figure, self.ax = plt.subplots()
         self.lines, = self.ax.plot([], [], 'o')
         self.ax.set_autoscaley_on(True)

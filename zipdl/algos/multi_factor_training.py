@@ -1,3 +1,9 @@
+from zipdl.envs import dynamic_beta_env as dbenv
+
+ENV = Dynamic_beta_env(dbenv.TRADING_START)
+'''
+ALGO BELOW
+'''
 import numpy as np
 import pandas as pd
 from numexpr import evaluate
@@ -11,11 +17,11 @@ from zipline.data import bundles
 from zipline.api import *
 from zipline.pipeline.data import USEquityPricing
 from zipline.utils.math_utils import nanmean, nanstd
+from zipline.finance.slippage import FixedSlippage
 
+import empyrical
 from zipdl.utils import utils
 import datetime as dt
-
-#TODO: Process value metrics, so that less db calls required
 
 # Weeks between a rebalance
 REBALANCE_PERIOD = 4
@@ -38,8 +44,8 @@ RSI_LOWER = 30
 RSI_UPPER = 70
 
 # Percentile in range [0, 1] of stocks that are shorted/bought
-SHORTS_PERCENTILE = 0.05
-LONGS_PERCENTILE = 0.05
+SHORTS_PERCENTILE = 0.01
+LONGS_PERCENTILE = 0.01
 
 # Constraint Parameters
 MAX_GROSS_LEVERAGE = 1.0
@@ -61,19 +67,20 @@ LOSS_THRESHOLD = 0.03
 # Whether or not to print pipeline output stats. For backtest speed, turn off.
 PRINT_PIPE = False
 
+BATCH_SIZE = 32
+
+ACTION = 0
 #=================util=============================
-bundle_data = bundles.load('quantopian-quandl')
 #Throws out tickers not found in quandl-quantopian data (mostly tickers with no vol)
 def safe_symbol(ticker):
     try:
-        bundle_data.asset_finder.lookup_symbol(ticker, as_of_date=None)
-        return ticker
+        x = symbol(ticker)
+        return x
     except: 
         return None
 def safe_symbol_convert(tickers):
     filtered_list = list(filter(None.__ne__, [safe_symbol(ticker) for ticker in tickers]))
-    assets = bundle_data.asset_finder.lookup_symbols(filtered_list, as_of_date=None)
-    return assets
+    return filtered_list
 
 def universe_transform(date):
     universe = utils.get_current_universe(date)
@@ -81,23 +88,25 @@ def universe_transform(date):
     return tradable_assets
 
 #==================PRIMARY==========================
-def initialize_environment(weight, trading_start):
+def initialize_environment(agent, trading_day=2):
+    assert 1 <= trading_day <= 5
     def initialize(context):
+        context.agent = agent
+        context.values = deque(maxlen=21)
         set_commission(commission.PerShare(cost=0.005, min_trade_cost=1.00))
-        context.universe = universe_transform(trading_start)
+        set_slippage(slippage.FixedSlippage(0.00))
+        context.universe = universe_transform('2018-01-01')
 
-        context.Factor_weights = weight
-        context.curr_date = trading_start
-
-        schedule_function(rebalance_portfolio, date_rules.week_start(days_offset=2), time_rules.market_open(hours=1))
+        schedule_function(rebalance_portfolio, date_rules.week_start(days_offset=trading_day), time_rules.market_open(hours=1))
         
-        schedule_function(cancel_open_orders, date_rules.every_day(), time_rules.market_open())
+        #schedule_function(cancel_open_orders, date_rules.every_day(), time_rules.market_open())
 
-        schedule_function(prime_pipeline, date_rules.week_start(days_offset=1), time_rules.market_close())
+        schedule_function(prime_pipeline, date_rules.week_start(days_offset=trading_day-1), time_rules.market_close())
 
+        context.Factor_weights = ENV.current_node.weights
         context.weights = None
         context.run_pipeline = True #We want to run stock selector immediately
-        context.weeks_since_rebalance = 0
+        context.weeks_since_rebalance = -1
 
         attach_pipeline(make_pipeline(context), 'my_pipeline')
 
@@ -108,8 +117,8 @@ def initialize_environment(weight, trading_start):
 
 def handle_data(context, data):
     #Daily function
-    context.curr_date += dt.timedelta(days=1)
-    context.universe = universe_transform(context.curr_date)
+    #context.universe = universe_transform(get_datetime())
+    context.values.append(context.portfolio.portfolio_value)
 
 def rebalance_portfolio(context, data):
     # rebalance portfolio
@@ -117,47 +126,57 @@ def rebalance_portfolio(context, data):
     total_weight = np.sum(context.weights.abs())
     weights = context.weights / total_weight
     for stock, weight in weights.items():
-        order_target_percent(stock, weight)
-
+        result = order_target_percent(stock, weight)
+        
 def before_trading_start(context, data):
     if not context.run_pipeline:
         return
-    
+
+    date = get_datetime()
+    if (date - context.start_date).days > 12:
+        print('training on {}'.format(date))
+        returns = pd.Series(list(context.values)).pct_change()
+        context.values.clear()
+        sortino_reward = empyrical.sortino_ratio(returns, period=empyrical.MONTHLY)
+        ENV.update_state(date)
+        context.agent.remember(ENV.prev_state, ACTION, sortino_reward, ENV.state, False)
+        ACTION = context.agent.act(ENV.state)
+        context.Factor_weights = ENV.step(ACTION)
+        if len(context.agent.memory) > BATCH_SIZE:
+            context.agent.replay(BATCH_SIZE)
+        
     context.run_pipeline = False
     def compute(today, symbols, close):
         #for verification
-        #tickers = [asset.symbol for asset in bundle_data.asset_finder.retrieve_all(asset_ids)]
         tickers = [symbol.symbol for symbol in symbols]
         
-        shares_outstanding = np.array(get_fundamentals(today, 'Shares_Outstanding', tickers))
+        shares_outstanding = np.array(utils.get_fundamentals(today, 'Shares_Outstanding', tickers))
         market_cap = close * shares_outstanding
         #ev_to_ebitda
-        ebitda = np.array(get_fundamentals(today, 'EBITDA', tickers))
-        shortTermDebt = np.array(get_fundamentals(today, 'Short term debt', tickers))
-        longTermDebt = np.array(get_fundamentals(today, 'Long Term Debt', tickers))
-        c_and_c_equivs = np.array(get_fundamentals(today, 'Cash and Cash Equivalents', tickers))
+        ebitda = np.array(utils.get_fundamentals(today, 'EBITDA', tickers))
+        shortTermDebt = np.array(utils.get_fundamentals(today, 'Short term debt', tickers))
+        longTermDebt = np.array(utils.get_fundamentals(today, 'Long Term Debt', tickers))
+        c_and_c_equivs = np.array(utils.get_fundamentals(today, 'Cash and Cash Equivalents', tickers))
         ev = shortTermDebt + longTermDebt + market_cap - c_and_c_equivs
         ebitda_to_ev = ebitda / ev
         
         #Book to price
-        totalAssets = np.array(get_fundamentals(today, 'Total Assets', tickers))
-        totalLiab = np.array(get_fundamentals(today, 'Total Liabilities', tickers))
+        totalAssets = np.array(utils.get_fundamentals(today, 'Total Assets', tickers))
+        totalLiab = np.array(utils.get_fundamentals(today, 'Total Liabilities', tickers))
         book_to_price = (totalAssets - totalLiab) / shares_outstanding
 
-        fcf = np.array(get_fundamentals(today, 'Free Cash Flow', tickers))
+        fcf = np.array(utils.get_fundamentals(today, 'Free Cash Flow', tickers))
         fcf_yield = fcf / close
 
         values = ebitda_to_ev * book_to_price * fcf_yield
         #print(values)
         out = pd.Series(values, symbols)
         return out
-    close = np.array([data.current(symbol, 'price') for symbol in context.universe])
-    value_factor = compute(context.curr_date, context.universe, close).to_frame()
+    #close = np.array([data.current(symbol, 'price') for symbol in context.universe])
+    #value_factor = compute(context.curr_date, context.universe, close).to_frame()
     context.output = pipeline_output('my_pipeline')
-    context.output = context.output.join(value_factor).dropna()
-    print('Context')
-    print(context.output)
-
+    #context.output = context.output.join(value_factor).dropna()
+    
     # Do some pre-work on factors
     if NORMALIZE_VALUE_SCORES:
         normalizeValueScores(context)
@@ -190,12 +209,10 @@ def before_trading_start(context, data):
         context.weights = shorts.append(longs)
     else:
         context.weights = longs
-    #print(context.weights)
     # log.info(context.weights)
     
 
 #==================UTILS==========================
-
 def cancel_open_orders(context, data):
     for stock in get_open_orders():
         for order in get_open_orders(stock):
