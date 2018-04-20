@@ -1,4 +1,6 @@
 import numpy as np
+#TODO: For some reason I thought I would need to modify these. If someone wants to 
+#modify the code to simply use openai.gym in the future please do so. 
 
 class Discrete():
     """

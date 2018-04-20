@@ -1,6 +1,6 @@
 from zipdl.envs import dynamic_beta_env as dbenv
 
-ENV = Dynamic_beta_env(dbenv.TRADING_START)
+ENV = dbenv.Dynamic_beta_env(dbenv.TRADING_START)
 '''
 ALGO BELOW
 '''
@@ -22,6 +22,7 @@ from zipline.finance.slippage import FixedSlippage
 import empyrical
 from zipdl.utils import utils
 import datetime as dt
+from sklearn.preprocessing import minmax_scale
 
 # Weeks between a rebalance
 REBALANCE_PERIOD = 4
@@ -146,36 +147,18 @@ def before_trading_start(context, data):
             context.agent.replay(BATCH_SIZE)
         
     context.run_pipeline = False
-    def compute(today, symbols, close):
+    def compute(today, symbols):
         #for verification
         tickers = [symbol.symbol for symbol in symbols]
-        
-        shares_outstanding = np.array(utils.get_fundamentals(today, 'Shares_Outstanding', tickers))
-        market_cap = close * shares_outstanding
-        #ev_to_ebitda
-        ebitda = np.array(utils.get_fundamentals(today, 'EBITDA', tickers))
-        shortTermDebt = np.array(utils.get_fundamentals(today, 'Short term debt', tickers))
-        longTermDebt = np.array(utils.get_fundamentals(today, 'Long Term Debt', tickers))
-        c_and_c_equivs = np.array(utils.get_fundamentals(today, 'Cash and Cash Equivalents', tickers))
-        ev = shortTermDebt + longTermDebt + market_cap - c_and_c_equivs
-        ebitda_to_ev = ebitda / ev
-        
-        #Book to price
-        totalAssets = np.array(utils.get_fundamentals(today, 'Total Assets', tickers))
-        totalLiab = np.array(utils.get_fundamentals(today, 'Total Liabilities', tickers))
-        book_to_price = (totalAssets - totalLiab) / shares_outstanding
-
-        fcf = np.array(utils.get_fundamentals(today, 'Free Cash Flow', tickers))
-        fcf_yield = fcf / close
-
-        values = ebitda_to_ev * book_to_price * fcf_yield
+        values = np.array(utils.get_fundamentals(today, 'VALUE', tickers))
         #print(values)
+        values = minmax_scale(values, feature_range=(-1,1))
         out = pd.Series(values, symbols)
         return out
-    #close = np.array([data.current(symbol, 'price') for symbol in context.universe])
-    #value_factor = compute(context.curr_date, context.universe, close).to_frame()
+    value_factor = compute(context.curr_date, context.universe).to_frame()
+
     context.output = pipeline_output('my_pipeline')
-    #context.output = context.output.join(value_factor).dropna()
+    context.output = context.output.join(value_factor).dropna()
     
     # Do some pre-work on factors
     if NORMALIZE_VALUE_SCORES:

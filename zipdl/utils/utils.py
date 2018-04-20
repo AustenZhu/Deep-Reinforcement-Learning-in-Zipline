@@ -12,7 +12,7 @@ T6M_BUCKETS = [0.0193284320648, 0.0806490876864]
 TTM_BUCKETS = [0.057386937542, 0.145046716341]
 SAVINGSD1M_BUCKETS = [-0.0261929824561, 0.0357532467532]
 SAVINGS_BUCKETS = [4.5, 5.6]
-FUNDAMENTALS = ['Gross Margin', 'Cash From Investing Activities', 'Minorities', 'Free Cash Flow', 'Total Noncurrent Assets', 'Net PP&E', 'Income Taxes', 'Depreciation & Amortisation', 'Change in Working Capital', 'Equity Before Minorities', 'Cash and Cash Equivalents', 'SG&A', 'Goodwill', 'Cash From Operating Activities', 'Return on Equity', 'Retained Earnings', 'Current Assets', 'Net Change in PP&E & Intangibles', 'Dividends', 'Accounts Payable', 'Return on Assets', 'Net Change in Cash', 'Current Ratio', 'Net Income from Discontinued Op.', 'Treasury Stock', 'Total Noncurrent Liabilities', 'Share Capital', 'Revenues', 'Long Term Debt', 'EBITDA', 'Total Assets', 'Total Liabilities', 'Intangible Assets', 'EBIT', 'Net Profit Margin', 'R&D', 'COGS', 'Liabilities to Equity Ratio', 'Abnormal Gains/Losses', 'Net Profit', 'Preferred Equity', 'Total Equity', 'Debt to Assets Ratio', 'Current Liabilities', 'Receivables', 'Operating Margin', 'Short term debt', 'Cash From Financing Activities', 'Shares_Outstanding']
+FUNDAMENTALS = ['Gross Margin', 'Cash From Investing Activities', 'Minorities', 'Free Cash Flow', 'Total Noncurrent Assets', 'Net PP&E', 'Income Taxes', 'Depreciation & Amortisation', 'Change in Working Capital', 'Equity Before Minorities', 'Cash and Cash Equivalents', 'SG&A', 'Goodwill', 'Cash From Operating Activities', 'Return on Equity', 'Retained Earnings', 'Current Assets', 'Net Change in PP&E & Intangibles', 'Dividends', 'Accounts Payable', 'Return on Assets', 'Net Change in Cash', 'Current Ratio', 'Net Income from Discontinued Op.', 'Treasury Stock', 'Total Noncurrent Liabilities', 'Share Capital', 'Revenues', 'Long Term Debt', 'EBITDA', 'Total Assets', 'Total Liabilities', 'Intangible Assets', 'EBIT', 'Net Profit Margin', 'R&D', 'COGS', 'Liabilities to Equity Ratio', 'Abnormal Gains/Losses', 'Net Profit', 'Preferred Equity', 'Total Equity', 'Debt to Assets Ratio', 'Current Liabilities', 'Receivables', 'Operating Margin', 'Short term debt', 'Cash From Financing Activities', 'Shares_Outstanding', 'VALUE']
 
 
 import numpy as np
@@ -65,15 +65,17 @@ def translate_metric(value, bins):
         return len(bins)
 
 def get_metric(date, metric, session=session):
-    assert metric in [x.metric for x in session.query(Market_Metric).all()]
-    metric = session.query(m.Market_Metric).filter(m.Market_Metric.metric==metric).all()[0]
+    metric = session.query(m.Market_Metric).filter(m.Market_Metric.metric==metric).one_or_none()
     series = metric.time_series
-    strings_to_date(series, '%Y-%m-%d')
+    series = safe_strings_to_date(series)
+    if not isinstance(date, dt.datetime):
+        date = dt.datetime.strptime(date, '%Y-%m-%d')
     closest_date = find_closest_date(series.keys(), date)
     return series[closest_date]
 
 def get_metric_bucket(date, metric):
-    assert isinstance(date, dt.datetime)
+    if not isinstance(date, dt.datetime):
+        date = dt.datetime.strptime(date, '%Y-%m-%d')
     assert metric in list(METRIC_DICT.keys())
     val = get_metric(date, metric)
     return METRIC_DICT[metric](val)
@@ -127,7 +129,7 @@ def get_fundamental(date, fundamental, ticker, session=session):
     return series[closest_date]
 
 from zipdl.data import models as m
-def get_fundamentals(date, fundamental, tickers, session=utils.session):
+def get_fundamentals(date, fundamental, tickers, session=session):
     data = session.query(m.Fundamentals).filter(m.Fundamentals.metric==fundamental).all()
     data = [obj for obj in data if obj.ticker in tickers]
     dict_tickers = [obj.ticker for obj in data]
@@ -137,6 +139,8 @@ def get_fundamentals(date, fundamental, tickers, session=utils.session):
         if not obj.time_series:
             return np.nan
         close = utils.find_closest_date(obj.time_series.keys(), date)
+        if (close - date) > 7: 
+            return np.nan
         return obj.time_series[close]
     values = [get_close(obj, date) for obj in data]
     dictionary = dict(zip(dict_tickers, values))
@@ -188,14 +192,32 @@ def dates_to_string(mydict):
     for key in list(mydict.keys()):
         if type(key) is not str:
             try:
-                mydict[date.strftime(key, '%Y-%m-%d')] = mydict[key]
+                mydict[dt.datetime.strftime(key, '%Y-%m-%d')] = mydict[key]
             except:
-                try:
-                    mydict[str(key)] = mydict[key]
-                except:
-                    pass
+                pass
             del mydict[key]
     assert origlen == len(mydict.keys())
+
+def safe_strings_to_date(mydict, wierd=False):
+    mydict = mydict.copy()
+    origlen = len(mydict.keys())
+    for key in list(mydict.keys()):
+        if not wierd:
+            try:
+                mydict[parser.parse(key)] = mydict[key]
+                del mydict[key]
+            except TypeError:
+                pass
+        else:
+            try:
+                date = dt.datetime.strptime(key, '%m/%d/%Y')
+                mydict[date] = mydict[key]
+                del mydict[key]
+            except TypeError:
+                pass
+            except:
+                del mydict[key]
+    return mydict 
 
 def reload_session():
     session = db.create_session(autoflush=False)

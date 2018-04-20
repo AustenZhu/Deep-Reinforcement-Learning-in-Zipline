@@ -1,5 +1,7 @@
 '''
 Taken from: https://github.com/openai/gym/blob/master/gym/spaces/dict_space.py
+#TODO: For some reason I thought I would need to modify these. If someone wants to 
+modify the code to simply use openai.gym in the future please do so. 
 '''
 from collections import OrderedDict
 

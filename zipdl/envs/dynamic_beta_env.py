@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 
 from zipdl.utils import seeding
 from zipdl.utils import utils
-from zipdl.utils.spaces import Discrete, DB2Node
+from zipdl.utils.spaces.discrete import Discrete
+from zipdl.utils.spaces.db_node import DB2Node
 
 from zipline import run_algorithm
 
@@ -15,7 +16,7 @@ START_CASH = 5000
 #TODO: Allow partitioning of the time span of data to allow for cross-validation testing
 TRADING_START = dt.strptime('2010-01-01', '%Y-%m-%d')
 TRADING_END = dt.strptime('2016-01-01', '%Y-%m-%d')
-ENV_METRICS = ['t3m', 'ps-1mdelat', 'vix']
+ENV_METRICS = ['t3m', 'ps-1mdelat', 'vixD1m']
 NUM_BUCKETS = [3, 3, 3]
 #Where the first element is the starting factor weighting
 FACTOR_WEIGHTS = [[0.1, 0.9], [0.3, 0.7], [0.5, 0.5], [0.7, 0.3], [0.9, 0.1]]
@@ -53,19 +54,19 @@ class Dynamic_beta_env:
         '''
         self.starting_cash = START_CASH
 
-        self.current_node = initialize_nodes()
+        self.current_node = self.initialize_nodes()
         self.action_space = Discrete(3)
         self.observation_space = dict({metric : Discrete(bucket_num) for metric, bucket_num in zip(ENV_METRICS, NUM_BUCKETS)})
         self.observation_space['Curr state'] = Discrete(len(DB2Node.Nodes2))
-        self.seed()
         self.start = trading_start
-        self.state = np.array([utils.get_metric_bucket(date, metric) for metric in ENV_METRICS]).append(self.current_node.id)
+        self.state = np.array([utils.get_metric_bucket(self.start, metric) for metric in ENV_METRICS]+ [self.current_node.id])
+        self.state = np.reshape(self.state, [1, len(self.observation_space)])
         self.prev_state = None
 
         if RENDER:
             reset_render()
             
-    def initialize_nodes():
+    def initialize_nodes(self):
         #Initialize nodes according to mdp, and return starting nodes
         counter = 0
         for weight in FACTOR_WEIGHTS:
@@ -76,6 +77,7 @@ class Dynamic_beta_env:
     def update_state(date):
         self.prev_state = self.state  
         self.state = np.array([utils.get_metric_bucket(date, metric) for metric in ENV_METRICS]).append(self.current_node.id)
+        self.state = np.reshape(state, [1, len(observation_space)])
         return self.state
 
     def step(self, action):
