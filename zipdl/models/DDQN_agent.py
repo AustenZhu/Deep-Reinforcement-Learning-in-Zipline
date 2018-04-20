@@ -6,18 +6,16 @@ from keras.optimizers import Adam
 from keras import backend as K
 import numpy as np
 
-from zipline import run_algorithm
-
 MAX_REPLAY_MEM = 2000 #Number of replays to store
 GAMMA = 0.95 #Discount Rate
 EPSILON = 1 #Start explore rate
-EPMIN_EPSILON = 0.01 #Min explore rate
+MIN_EPSILON = 0.01 #Min explore rate
 EPSILON_DECAY = 0.99 #Rate of exploration decay
 LEARNING_RATE = 0.001 
 LAYER_DIMENSION = 24
 
 class DDQNAgent:
-    def __init__(self, state_size, action_size, algo):
+    def __init__(self, state_size, action_size):
         self.state_size = state_size
         self.action_size = action_size
         self.memory = deque(maxlen=MAX_REPLAY_MEM)
@@ -29,7 +27,6 @@ class DDQNAgent:
         self.model = self._build_model()
         self.target_model = self._build_model()
         self.update_target_model()
-        self.algo = algo
             
     def _huber_loss(self, target, prediction):
         error = prediction-target
@@ -38,7 +35,7 @@ class DDQNAgent:
     def _build_model(self):
         #TODO - Calculate largest action space for dbnodes, then dropout neurons that will not be used for other nodes
         model = Sequential()
-        model.add(Dense(LAYER_DIMENSION, input=self.state_size, activation='relu'))
+        model.add(Dense(LAYER_DIMENSION, input_dim=self.state_size, activation='relu'))
         model.add(Dense(LAYER_DIMENSION, activation='relu'))
         model.add(Dense(self.action_size, activation='linear'))
         model.compile(loss=self._huber_loss,

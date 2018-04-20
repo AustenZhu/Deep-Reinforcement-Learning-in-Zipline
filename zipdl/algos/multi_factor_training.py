@@ -89,9 +89,10 @@ def universe_transform(date):
     return tradable_assets
 
 #==================PRIMARY==========================
-def initialize_environment(agent, trading_day=2):
+def initialize_environment(agent, trading_start, trading_day=2,):
     assert 1 <= trading_day <= 5
     def initialize(context):
+        context.start_date = trading_start
         context.agent = agent
         context.values = deque(maxlen=21)
         set_commission(commission.PerShare(cost=0.005, min_trade_cost=1.00))
@@ -133,8 +134,8 @@ def before_trading_start(context, data):
     if not context.run_pipeline:
         return
 
-    date = get_datetime()
-    if (date - context.start_date).days > 12:
+    date = get_datetime().replace(tzinfo=None)
+    if (date - context.start_date.replace(tzinfo=None)).days > 12:
         print('training on {}'.format(date))
         returns = pd.Series(list(context.values)).pct_change()
         context.values.clear()
@@ -155,7 +156,7 @@ def before_trading_start(context, data):
         values = minmax_scale(values, feature_range=(-1,1))
         out = pd.Series(values, symbols)
         return out
-    value_factor = compute(context.curr_date, context.universe).to_frame()
+    value_factor = compute(date, context.universe).to_frame()
 
     context.output = pipeline_output('my_pipeline')
     context.output = context.output.join(value_factor).dropna()

@@ -138,7 +138,7 @@ def get_fundamentals(date, fundamental, tickers, session=session):
         #print(obj.ticker)
         if not obj.time_series:
             return np.nan
-        close = utils.find_closest_date(obj.time_series.keys(), date)
+        close = find_closest_date(obj.time_series.keys(), date)
         if (close - date) > 7: 
             return np.nan
         return obj.time_series[close]
@@ -177,7 +177,11 @@ def strings_to_date(mydict, wierd=False):
                 mydict[parser.parse(key)] = mydict[key]
                 del mydict[key]
             except TypeError:
-                pass
+                try:
+                    mydict[pd.to_datetime(key)] = mydict[key]
+                    del mydict[key]
+                except:
+                    pass
         else:
             try:
                 date = dt.datetime.strptime(key, '%m/%d/%Y')
