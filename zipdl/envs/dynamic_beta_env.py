@@ -74,19 +74,21 @@ class Dynamic_beta_env:
             counter += 1
         return DB2Node.Nodes2[3] #Starting node of [5,5]
 
-    def update_state(date):
+    def update_state(self, date):
         self.prev_state = self.state  
-        self.state = np.array([utils.get_metric_bucket(date, metric) for metric in ENV_METRICS]).append(self.current_node.id)
-        self.state = np.reshape(state, [1, len(observation_space)])
+        state = np.array([utils.get_metric_bucket(date, metric) for metric in ENV_METRICS] + [self.current_node.id])
+        self.state = np.reshape(state, [1, len(self.observation_space)])
         return self.state
 
     def step(self, action):
         assert self.action_space.contains(action), "%r (%s) invalid"%(action, type(action))
         if action == 0: 
-            next_index = (self.current_node.index - 1) % len(DB2Node.Nodes)
+            next_index = (self.current_node.index - 1) % len(DB2Node.Nodes2)
         elif action == 2: 
-            next_index = (self.current_node.index + 1) % len(DB2Node.Nodes)
-        self.current_node = DB2Node.Nodes[next_index]
+            next_index = (self.current_node.index + 1) % len(DB2Node.Nodes2)
+        else:
+            next_index = self.current_node.index
+        self.current_node = DB2Node.Nodes2[next_index]
         return self.current_node.weights
 
     def reset(self):

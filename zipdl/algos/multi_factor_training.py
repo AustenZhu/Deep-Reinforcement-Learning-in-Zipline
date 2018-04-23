@@ -94,6 +94,7 @@ def initialize_environment(agent, trading_start, trading_day=2,):
     def initialize(context):
         context.start_date = trading_start
         context.agent = agent
+        context.action = ACTION
         context.values = deque(maxlen=21)
         set_commission(commission.PerShare(cost=0.005, min_trade_cost=1.00))
         set_slippage(slippage.FixedSlippage(0.00))
@@ -128,7 +129,8 @@ def rebalance_portfolio(context, data):
     total_weight = np.sum(context.weights.abs())
     weights = context.weights / total_weight
     for stock, weight in weights.items():
-        result = order_target_percent(stock, weight)
+        if not np.isnan(weight):
+            result = order_target_percent(stock, weight)
         
 def before_trading_start(context, data):
     if not context.run_pipeline:
@@ -141,36 +143,40 @@ def before_trading_start(context, data):
         context.values.clear()
         sortino_reward = empyrical.sortino_ratio(returns, period=empyrical.MONTHLY)
         ENV.update_state(date)
-        context.agent.remember(ENV.prev_state, ACTION, sortino_reward, ENV.state, False)
-        ACTION = context.agent.act(ENV.state)
-        context.Factor_weights = ENV.step(ACTION)
+        context.agent.remember(ENV.prev_state, context.action, sortino_reward, ENV.state, False)
+        new_action = context.agent.act(ENV.state)
+        context.Factor_weights = ENV.step(new_action)
+        context.action = new_action
         if len(context.agent.memory) > BATCH_SIZE:
             context.agent.replay(BATCH_SIZE)
         
     context.run_pipeline = False
+    
+    def zero_one_scale(array):
+        return (array - np.nanmin(array))/(np.nanmax(array) - np.nanmin(array))
+    
     def compute(today, symbols):
         #for verification
         tickers = [symbol.symbol for symbol in symbols]
         values = np.array(utils.get_fundamentals(today, 'VALUE', tickers))
         #print(values)
-        values = minmax_scale(values, feature_range=(-1,1))
+        #Scaling
+        values = zero_one_scale(values)
         out = pd.Series(values, symbols)
         return out
     value_factor = compute(date, context.universe).to_frame()
 
     context.output = pipeline_output('my_pipeline')
+    context.output['momentum_score'] = zero_one_scale(context.output['momentum_score'])
     context.output = context.output.join(value_factor).dropna()
     
-    # Do some pre-work on factors
-    if NORMALIZE_VALUE_SCORES:
-        normalizeValueScores(context)
     
     # Rank each column of pipeline output (higher rank is better). Then create composite score based on weighted average of factor ranks
     individual_ranks = context.output.rank()
     individual_ranks *= context.Factor_weights
     ranks = individual_ranks.sum(axis=1).dropna().sort_values() + 1
+    ranks = ranks.dropna()
 
-    
     number_shorts = int(SHORTS_PERCENTILE*len(ranks))
     number_longs = int(LONGS_PERCENTILE*len(ranks))
     
@@ -193,6 +199,8 @@ def before_trading_start(context, data):
         context.weights = shorts.append(longs)
     else:
         context.weights = longs
+        
+    context.weights = context.weights.dropna()
     # log.info(context.weights)
     
 

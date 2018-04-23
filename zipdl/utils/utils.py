@@ -139,7 +139,7 @@ def get_fundamentals(date, fundamental, tickers, session=session):
         if not obj.time_series:
             return np.nan
         close = find_closest_date(obj.time_series.keys(), date)
-        if (close - date) > 7: 
+        if (close - date).days > 7: 
             return np.nan
         return obj.time_series[close]
     values = [get_close(obj, date) for obj in data]

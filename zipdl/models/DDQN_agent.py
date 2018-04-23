@@ -5,6 +5,7 @@ from keras.layers import Dense
 from keras.optimizers import Adam
 from keras import backend as K
 import numpy as np
+import random
 
 MAX_REPLAY_MEM = 2000 #Number of replays to store
 GAMMA = 0.95 #Discount Rate
@@ -66,7 +67,7 @@ class DDQNAgent:
                 t = self.target_model.predict(next_state)[0]
                 target[0][action] = reward + self.gamma * t[np.argmax(a)]
             self.model.fit(state, target, epochs=1, verbose=0)
-        if self.epsilon > self.epsilon_min:
+        if self.epsilon > self.min_epsilon:
             self.epsilon *= self.epsilon_decay
 
     def load(self, name):
