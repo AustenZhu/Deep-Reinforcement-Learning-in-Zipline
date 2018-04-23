@@ -10,7 +10,7 @@ import pandas as pd
 EPISODES = 5001
 start_capital = 5000
 
-TRADING_START = pd.to_datetime('2010-01-01').tz_localize('US/Eastern')
+TRADING_START = pd.to_datetime('2011-01-01').tz_localize('US/Eastern')
 TRADING_END = pd.to_datetime('2016-01-01').tz_localize('US/Eastern')
 
 algo = [mf.initialize_environment, mf.handle_data, mf.before_trading_start]
