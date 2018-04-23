@@ -4,6 +4,7 @@ ENV = dbenv.Dynamic_beta_env(dbenv.TRADING_START)
 '''
 ALGO BELOW
 '''
+from collections import deque
 import numpy as np
 import pandas as pd
 from numexpr import evaluate
@@ -68,7 +69,7 @@ LOSS_THRESHOLD = 0.03
 # Whether or not to print pipeline output stats. For backtest speed, turn off.
 PRINT_PIPE = False
 
-BATCH_SIZE = 32
+BATCH_SIZE = 16
 
 ACTION = 0
 #=================util=============================

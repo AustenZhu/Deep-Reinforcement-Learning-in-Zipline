@@ -34,7 +34,6 @@ class DDQNAgent:
         return K.mean(K.sqrt(1 + K.square(error))-1, axis=-1)
     
     def _build_model(self):
-        #TODO - Calculate largest action space for dbnodes, then dropout neurons that will not be used for other nodes
         model = Sequential()
         model.add(Dense(LAYER_DIMENSION, input_dim=self.state_size, activation='relu'))
         model.add(Dense(LAYER_DIMENSION, activation='relu'))
