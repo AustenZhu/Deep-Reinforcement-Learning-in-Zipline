@@ -69,7 +69,7 @@ LOSS_THRESHOLD = 0.03
 # Whether or not to print pipeline output stats. For backtest speed, turn off.
 PRINT_PIPE = False
 
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 
 ACTION = 0
 #=================util=============================
@@ -95,6 +95,7 @@ def initialize_environment(agent, trading_start, trading_day=2,):
     def initialize(context):
         context.start_date = trading_start
         context.agent = agent
+        context.num_trials = 0
         context.action = ACTION
         context.values = deque(maxlen=21)
         set_commission(commission.PerShare(cost=0.005, min_trade_cost=1.00))
@@ -136,10 +137,11 @@ def rebalance_portfolio(context, data):
 def before_trading_start(context, data):
     if not context.run_pipeline:
         return
-
+    
     date = get_datetime().replace(tzinfo=None)
     if (date - context.start_date.replace(tzinfo=None)).days > 12:
         print('training on {}'.format(date))
+        context.num_trials += 1
         returns = pd.Series(list(context.values)).pct_change()
         context.values.clear()
         sortino_reward = empyrical.sortino_ratio(returns, period=empyrical.MONTHLY)
@@ -148,8 +150,9 @@ def before_trading_start(context, data):
         new_action = context.agent.act(ENV.state)
         context.Factor_weights = ENV.step(new_action)
         context.action = new_action
-        if len(context.agent.memory) > BATCH_SIZE:
+        if context.num_trials > BATCH_SIZE:
             context.agent.replay(BATCH_SIZE)
+            context.num_trials = 0
         
     context.run_pipeline = False
     
