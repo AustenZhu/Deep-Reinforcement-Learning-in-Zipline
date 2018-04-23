@@ -8,7 +8,7 @@ utils.clean_db_time_series(mf.DB_FACTORS_USED)
 import pandas as pd
 
 BATCH_SIZE = 32
-EPISODES = 5000
+EPISODES = 5001
 start_capital = 5000
 
 TRADING_START = pd.to_datetime('2010-01-01').tz_localize('US/Eastern')
@@ -48,5 +48,5 @@ for e in range(EPISODES):
             agent.update_target_model()
     print("episode: {}/{}, score: {}, e: {:.2}"
             .format(e, EPISODES, time, agent.epsilon))
-    # if e % 10 == 0:
-    #     agent.save("./save/cartpole-ddqn.h5")
+    if e % 10 == 0:
+        agent.save("./save/dynamic_beta-ddqn.h5")
