@@ -31,15 +31,21 @@ perf = run_algorithm(TRADING_START, TRADING_END,
                     metrics_set='faster')
 #NOTE - all training is done within the algo. 
 '''
+week_limit = 4
+day_limit = 5
 
 for e in range(EPISODES):
     state = mf.ENV.reset()
-    run_algorithm(TRADING_START, TRADING_END, 
-                    initialize=initialize, 
-                    capital_base=start_capital, 
-                    before_trading_start=before_trading_start,
-                    metrics_set='faster')
-    agent.update_target_model()
+    for i in range(week_limit):
+        new_start = TRADING_START + dt.datetime.timedelta(weeks=i)
+        for j in range(1, day_limit):
+            initialize = algo[0](agent, new_start, trading_day=j)
+            run_algorithm(TRADING_START, TRADING_END, 
+                            initialize=initialize, 
+                            capital_base=start_capital, 
+                            before_trading_start=before_trading_start,
+                            metrics_set='faster')
+            agent.update_target_model()
     print("episode: {}/{}, score: {}, e: {:.2}"
             .format(e, EPISODES, time, agent.epsilon))
     # if e % 10 == 0:
