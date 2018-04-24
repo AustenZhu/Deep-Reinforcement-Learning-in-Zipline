@@ -49,4 +49,4 @@ for e in range(EPISODES):
     print("episode: {}/{}, score: {}, e: {:.2}"
             .format(e, EPISODES, time, agent.epsilon))
     if e % 10 == 0:
-        agent.save("./save/dynamic_beta-ddqn.h5")
+        agent.save("./save/dynamic_beta-ddqn-{}.h5".format(e))
