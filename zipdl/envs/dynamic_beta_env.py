@@ -59,8 +59,8 @@ class Dynamic_beta_env:
         self.observation_space = dict({metric : Discrete(bucket_num) for metric, bucket_num in zip(ENV_METRICS, NUM_BUCKETS)})
         self.observation_space['Curr state'] = Discrete(len(DB2Node.Nodes2))
         self.start = trading_start
-        self.state = np.array([utils.get_metric_bucket(self.start, metric) for metric in ENV_METRICS]+ [self.current_node.id])
-        self.state = np.reshape(self.state, [1, len(self.observation_space)])
+        self.state = np.array([utils.get_metric_bucket(self.start, metric) for metric in ENV_METRICS] + [3])
+        #self.state = np.reshape(self.state, [1, len(self.observation_space)])
         self.prev_state = None
 
         if RENDER:
@@ -75,9 +75,9 @@ class Dynamic_beta_env:
         return DB2Node.Nodes2[3] #Starting node of [5,5]
 
     def update_state(self, date):
-        self.prev_state = self.state  
+        self.prev_state = np.array(self.state)  
         state = np.array([utils.get_metric_bucket(date, metric) for metric in ENV_METRICS] + [self.current_node.id])
-        self.state = np.reshape(state, [1, len(self.observation_space)])
+        self.state = state #np.reshape(state, [1, len(self.observation_space)])
         return self.state
 
     def step(self, action):

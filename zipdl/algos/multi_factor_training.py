@@ -69,7 +69,7 @@ LOSS_THRESHOLD = 0.03
 # Whether or not to print pipeline output stats. For backtest speed, turn off.
 PRINT_PIPE = False
 
-BATCH_SIZE = 32
+BATCH_SIZE = 16
 
 ACTION = 0
 #=================util=============================
@@ -123,7 +123,7 @@ def initialize_environment(agent, trading_start, trading_day=2,):
 def handle_data(context, data):
     #Daily function
     #context.universe = universe_transform(get_datetime())
-    context.values.append(context.portfolio.portfolio_value)
+    pass
 
 def rebalance_portfolio(context, data):
     # rebalance portfolio
@@ -135,22 +135,26 @@ def rebalance_portfolio(context, data):
             result = order_target_percent(stock, weight)
         
 def before_trading_start(context, data):
+    context.values.append(context.portfolio.portfolio_value)
     if not context.run_pipeline:
         return
     
     date = get_datetime().replace(tzinfo=None)
     if (date - context.start_date.replace(tzinfo=None)).days > 12:
         print('training on {}'.format(date))
-        context.num_trials += 1
         returns = pd.Series(list(context.values)).pct_change()
-        context.values.clear()
-        sortino_reward = empyrical.sortino_ratio(returns, period=empyrical.MONTHLY)
+        sortino_reward = empyrical.sortino_ratio(returns, period='monthly')
         ENV.update_state(date)
-        context.agent.remember(ENV.prev_state, context.action, sortino_reward, ENV.state, False)
+        print(ENV.state, ENV.state.shape, ENV.prev_state, ENV.prev_state.shape)
+        #print(context.num_trials, sortino_reward)
+        context.num_trials += 1
+        if ENV.prev_state.shape[0] == 4:
+            context.agent.remember(ENV.prev_state, context.action, sortino_reward, ENV.state, False)
         new_action = context.agent.act(ENV.state)
         context.Factor_weights = ENV.step(new_action)
         context.action = new_action
         if context.num_trials > BATCH_SIZE:
+            print('replaying')
             context.agent.replay(BATCH_SIZE)
             context.num_trials = 0
         

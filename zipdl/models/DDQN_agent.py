@@ -59,6 +59,10 @@ class DDQNAgent:
     def replay(self, batch_size):
         minibatch = random.sample(self.memory, batch_size)
         for state, action, reward, next_state, done in minibatch:
+            print(state, action, reward, next_state)
+            state = np.reshape(state, [1, self.state_size])
+            next_state = np.reshape(next_state, [1, self.state_size])
+            print(state.shape)
             target = self.model.predict(state)
             if done:
                 target[0][action] = reward
