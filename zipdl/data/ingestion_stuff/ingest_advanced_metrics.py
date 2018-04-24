@@ -6,7 +6,8 @@ from pandas_datareader import data as pdr
 import fix_yahoo_finance as yf
 yf.pdr_override()
 import quandl
-quandl.ApiConfig.api_key = 'H21mVCQNuU9cwyBa-EmM'
+import os
+quandl.ApiConfig.api_key = os.environ['QUANDL-APICONFIG']
 from zipdl.utils import utils
 
 UNIVERSE = pd.read_csv('condensed_universe.csv')
