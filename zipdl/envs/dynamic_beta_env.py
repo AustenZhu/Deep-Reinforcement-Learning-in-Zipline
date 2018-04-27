@@ -5,6 +5,7 @@ from datetime import timedelta
 import numpy as np
 import matplotlib.pyplot as plt
 
+from collections import deque
 from zipdl.utils import seeding
 from zipdl.utils import utils
 from zipdl.utils.spaces.discrete import Discrete
@@ -41,7 +42,7 @@ Where entry corresponds to model above, and a 1 in the entry corresponds to a va
 '''
 
 class Dynamic_beta_env:
-    def __init__(self, trading_start):
+    def __init__(self, trading_start, rrn=False, num_frames=None):
         '''
         Default rebalancing window = 'monthly'
         algo is a tuple of the following functions:
@@ -54,12 +55,21 @@ class Dynamic_beta_env:
         '''
         self.starting_cash = START_CASH
 
+        self.rrn = rrn
+        self.num_frames = num_frames
         self.current_node = self.initialize_nodes()
         self.action_space = Discrete(3)
         self.observation_space = dict({metric : Discrete(bucket_num) for metric, bucket_num in zip(ENV_METRICS, NUM_BUCKETS)})
         self.observation_space['Curr state'] = Discrete(len(DB2Node.Nodes2))
         self.start = trading_start
-        self.state = np.array([utils.get_metric_bucket(self.start, metric) for metric in ENV_METRICS] + [3])
+        curr = np.array([utils.get_metric_bucket(self.start, metric) for metric in ENV_METRICS] + [3])
+        assert len(curr) == len(ENV_METRICS) + 1
+        if self.rrn:
+            self.state = deque(maxlen=num_frames)
+            #print(state)
+            self.state.append(curr)
+        else:
+            self.state = curr
         #self.state = np.reshape(self.state, [1, len(self.observation_space)])
         self.prev_state = None
 
@@ -75,9 +85,14 @@ class Dynamic_beta_env:
         return DB2Node.Nodes2[3] #Starting node of [5,5]
 
     def update_state(self, date):
-        self.prev_state = np.array(self.state)  
-        state = np.array([utils.get_metric_bucket(date, metric) for metric in ENV_METRICS] + [self.current_node.id])
-        self.state = state #np.reshape(state, [1, len(self.observation_space)])
+        self.prev_state = self.state.copy()
+        curr = np.array([utils.get_metric_bucket(date, metric) for metric in ENV_METRICS] + [self.current_node.id])
+        print(date)
+        assert len(curr) == len(ENV_METRICS) + 1
+        if self.rrn:
+            self.state.append(curr)
+        else:
+            self.state = curr #np.reshape(state, [1, len(self.observation_space)])
         return self.state
 
     def step(self, action):
@@ -100,8 +115,13 @@ class Dynamic_beta_env:
             self.counter += 1
         if RENDER:
             reset_render()
-        metrics = [utils.get_metric_bucket(self.start, metric) for metric in ENV_METRICS]
-        self.state = metrics
+        #self.current_node = DB2Node.Nodes2[3]
+        metrics = np.array([utils.get_metric_bucket(self.start, metric) for metric in ENV_METRICS] + [3])
+        if self.rrn:
+            self.state.clear()
+            self.state.append(metrics)
+        else:
+            self.state = metrics
         return np.array(self.state)
 
     def render(self):

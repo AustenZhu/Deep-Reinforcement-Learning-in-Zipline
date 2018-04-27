@@ -1,6 +1,6 @@
 from zipdl.envs import dynamic_beta_env as dbenv
 
-ENV = dbenv.Dynamic_beta_env(dbenv.TRADING_START)
+ENV = dbenv.Dynamic_beta_env(dbenv.TRADING_START, rrn=True, num_frames=4)
 '''
 ALGO BELOW
 '''
@@ -90,7 +90,7 @@ def universe_transform(date):
     return tradable_assets
 
 #==================PRIMARY==========================
-def initialize_environment(agent, trading_start, trading_day=2,):
+def initialize_environment(agent, trading_start, trading_day=2):
     assert 1 <= trading_day <= 5
     def initialize(context):
         context.start_date = trading_start
@@ -144,12 +144,11 @@ def before_trading_start(context, data):
         print('training on {}'.format(date))
         returns = pd.Series(list(context.values)).pct_change()
         sortino_reward = empyrical.sortino_ratio(returns, period='monthly')
-        context.agent.last_score = sortino_reward
         ENV.update_state(date)
-        print(ENV.state, ENV.state.shape, ENV.prev_state, ENV.prev_state.shape)
+        print(ENV.state, ENV.prev_state, context.num_trials)
         #print(context.num_trials, sortino_reward)
-        context.num_trials += 1
-        if ENV.prev_state.shape[0] == 4:
+        if len(ENV.prev_state) == 4:
+            context.num_trials += 1
             context.agent.remember(ENV.prev_state, context.action, sortino_reward, ENV.state, False)
         new_action = context.agent.act(ENV.state)
         context.Factor_weights = ENV.step(new_action)

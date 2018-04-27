@@ -1,7 +1,7 @@
 #code adapted from https://github.com/keon/deep-q-learning/blob/master/ddqn.py
 from collections import deque
 from keras.models import Sequential
-from keras.layers import Dense
+from keras.layers import Dense, LSTM
 from keras.optimizers import Adam
 from keras import backend as K
 import numpy as np
@@ -14,9 +14,11 @@ MIN_EPSILON = 0.01 #Min explore rate
 EPSILON_DECAY = 0.99 #Rate of exploration decay
 LEARNING_RATE = 0.001 
 LAYER_DIMENSION = 24
+HIDDEN_UNITS = 24
+NUM_FRAMES = 4
 
-class DDQNAgent:
-    def __init__(self, state_size, action_size):
+class RRNAgent:
+    def __init__(self, state_size, action_size, num_frames=NUM_FRAMES):
         self.state_size = state_size
         self.action_size = action_size
         self.memory = deque(maxlen=MAX_REPLAY_MEM)
@@ -25,8 +27,10 @@ class DDQNAgent:
         self.min_epsilon = MIN_EPSILON
         self.epsilon_decay = EPSILON_DECAY
         self.learning_rate = LEARNING_RATE
+        self.num_frames = num_frames
         self.model = self._build_model()
         self.target_model = self._build_model()
+        
         self.update_target_model()
             
     def _huber_loss(self, target, prediction):
@@ -34,9 +38,9 @@ class DDQNAgent:
         return K.mean(K.sqrt(1 + K.square(error))-1, axis=-1)
     
     def _build_model(self):
-        #TODO - Calculate largest action space for dbnodes, then dropout neurons that will not be used for other nodes
         model = Sequential()
-        model.add(Dense(LAYER_DIMENSION, input_dim=self.state_size, activation='relu'))
+        model.add(LSTM(HIDDEN_UNITS, return_sequences=False, stateful=False, input_shape=(self.num_frames, self.state_size)))
+        model.add(Dense(LAYER_DIMENSION, activation='relu'))
         model.add(Dense(LAYER_DIMENSION, activation='relu'))
         model.add(Dense(self.action_size, activation='linear'))
         model.compile(loss=self._huber_loss,
@@ -53,17 +57,17 @@ class DDQNAgent:
     def act(self, state):
         if np.random.rand() <= self.epsilon:
             return random.randrange(self.action_size)
-        state = np.reshape(state, [1, self.state_size])
+        state = np.reshape(state, (1, self.num_frames, self.state_size))
         act_values = self.model.predict(state)
         return np.argmax(act_values[0])  # returns action
 
     def replay(self, batch_size):
         minibatch = random.sample(self.memory, batch_size)
         for state, action, reward, next_state, done in minibatch:
-            print(state, action, reward, next_state)
-            state = np.reshape(state, [1, self.state_size])
-            next_state = np.reshape(next_state, [1, self.state_size])
-            print(state.shape)
+            #print(state, action, reward, next_state)
+            state = np.reshape(state, (1, self.num_frames, self.state_size))
+            next_state = np.reshape(next_state, (1, self.num_frames, self.state_size))
+            #print(state.shape)
             target = self.model.predict(state)
             if done:
                 target[0][action] = reward
