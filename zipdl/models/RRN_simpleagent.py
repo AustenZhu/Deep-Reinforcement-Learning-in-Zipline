@@ -57,9 +57,13 @@ class RRNAgent:
     def act(self, state):
         if np.random.rand() <= self.epsilon:
             return random.randrange(self.action_size)
-        state = np.reshape(state, (1, self.num_frames, self.state_size))
-        act_values = self.model.predict(state)
-        return np.argmax(act_values[0])  # returns action
+        try:
+            state = np.reshape(state, (1, self.num_frames, self.state_size))
+            act_values = self.model.predict(state)
+            return np.argmax(act_values[0])  # returns action
+        except:
+            #QUICK HACK - TODO: FIX WHATEVERS WRONG WITH THE RESHAPING
+            return 0
 
     def replay(self, batch_size):
         minibatch = random.sample(self.memory, batch_size)
