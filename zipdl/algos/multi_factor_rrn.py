@@ -146,6 +146,7 @@ def before_trading_start(context, data):
         sortino_reward = empyrical.sortino_ratio(returns, period='monthly')
         ENV.update_state(date)
         print(ENV.state, ENV.prev_state, context.num_trials)
+        context.agent.last_score = sortino_reward
         #print(context.num_trials, sortino_reward)
         if len(ENV.prev_state) == 4:
             context.num_trials += 1

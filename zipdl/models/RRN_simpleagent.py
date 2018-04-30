@@ -30,6 +30,7 @@ class RRNAgent:
         self.num_frames = num_frames
         self.model = self._build_model()
         self.target_model = self._build_model()
+        self.last_score = 0
         
         self.update_target_model()
             
