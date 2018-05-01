@@ -7,4 +7,7 @@ NOTE: You might need to install nbformat first - don't know why.
 conda env create -f freeze.yml -n <name_of_env>
 source activate <name_of_env>
 ```
+
+Afterwards, you'll need to get the database setup - the data is from simfin and bloomberg terminals. You can find my process for extracting and processing these data sources in zipdl/data/ingestion_stuff. If necessary, I can provide the completed database on request. 
+
 Once you're setup, you can run zip_learning.py or zip_learning_rrn.py to start training!
