@@ -150,16 +150,10 @@ def before_trading_start(context, data):
         print(sortino_reward)
         #print(context.num_trials, sortino_reward)
         context.num_trials += 1
-        if ENV.prev_state.shape[0] == 4:
-            context.agent.remember(ENV.prev_state, context.action, sortino_reward, ENV.state, False)
         new_action = context.agent.act(ENV.state)
         context.Factor_weights = ENV.step(new_action)
         context.action = new_action
-        if context.num_trials > BATCH_SIZE:
-            print('replaying')
-            context.agent.replay(BATCH_SIZE)
-            context.num_trials = 0
-        
+
     context.run_pipeline = False
     
     def zero_one_scale(array):

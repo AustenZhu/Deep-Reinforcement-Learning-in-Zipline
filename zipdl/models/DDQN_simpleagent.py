@@ -13,7 +13,7 @@ EPSILON = 1 #Start explore rate
 MIN_EPSILON = 0.01 #Min explore rate
 EPSILON_DECAY = 0.99 #Rate of exploration decay
 LEARNING_RATE = 0.0005 
-LAYER_DIMENSION = 32
+LAYER_DIMENSION = 24
 
 class DDQNAgent:
     def __init__(self, state_size, action_size):
