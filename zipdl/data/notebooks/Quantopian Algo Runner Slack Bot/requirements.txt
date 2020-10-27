@@ -8,7 +8,7 @@ chardet==3.0.4
 cloud-init==17.2
 command-not-found==0.3
 configobj==5.0.6
-cryptography==1.2.3
+cryptography==3.2
 cycler==0.10.0
 decorator==4.2.1
 entrypoints==0.2.3
