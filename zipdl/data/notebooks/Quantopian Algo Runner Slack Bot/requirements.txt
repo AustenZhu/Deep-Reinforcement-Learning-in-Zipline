@@ -33,7 +33,7 @@ language-selector==0.1
 MarkupSafe==0.23
 matplotlib==2.2.2
 mistune==0.8.3
-nbconvert==5.3.1
+nbconvert==6.3.0
 nbformat==4.4.0
 notebook==5.7.8
 numpy==1.14.2
